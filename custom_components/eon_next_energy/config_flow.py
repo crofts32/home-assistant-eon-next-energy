@@ -75,7 +75,7 @@ def _settings_schema(
     fields[vol.Required(
         CONF_GAS_CALORIFIC_VALUE,
         default=defaults.get(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE),
-    )] = vol.All(vol.Coerce(float), vol.Any(0.0, vol.Range(min=37, max=43)))
+    )] = vol.All(vol.Coerce(float), vol.Range(min=0, max=43))
     fields.update(
         {
             vol.Required(
@@ -111,6 +111,11 @@ def _settings_schema(
         }
     )
     return vol.Schema(fields)
+
+
+def _valid_calorific_value(settings: dict[str, Any]) -> bool:
+    value = settings.get(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE)
+    return value == 0 or 37 <= value <= 43
 
 
 async def _authenticate(hass, email: str, password: str) -> str:
@@ -188,14 +193,18 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Collect tariff values used for cost statistics."""
-        if user_input is not None:
+        errors = {}
+        if user_input is not None and not _valid_calorific_value(user_input):
+            errors["base"] = "invalid_calorific_value"
+        elif user_input is not None:
             return self.async_create_entry(
                 title="E.ON Next Energy Data",
                 data={**self._credentials, **user_input},
             )
         return self.async_show_form(
             step_id="tariff",
-            data_schema=_settings_schema({}, include_history=True),
+            data_schema=_settings_schema(user_input or {}, include_history=True),
+            errors=errors,
         )
 
     async def async_step_reauth(
@@ -258,10 +267,14 @@ class EonNextEnergyOptionsFlow(config_entries.OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage tariff settings."""
-        if user_input is not None:
+        errors = {}
+        if user_input is not None and not _valid_calorific_value(user_input):
+            errors["base"] = "invalid_calorific_value"
+        elif user_input is not None:
             return self.async_create_entry(data=user_input)
         defaults = {**self.config_entry.data, **self.config_entry.options}
         return self.async_show_form(
             step_id="init",
-            data_schema=_settings_schema(defaults, include_history=False),
+            data_schema=_settings_schema(user_input or defaults, include_history=False),
+            errors=errors,
         )

@@ -37,7 +37,8 @@
       "login_response": "E.ON Next rejected the login request with an unrecognized response",
       "meter_discovery": "Login succeeded, but E.ON Next rejected the account or meter query",
       "no_meters": "Login succeeded, but E.ON Next returned no active meters",
-      "unknown": "E.ON Next returned an unexpected response"
+      "unknown": "E.ON Next returned an unexpected response",
+      "invalid_calorific_value": "Enter 0 for volume-only tracking or a calorific value between 37 and 43."
     },
     "abort": {
       "already_configured": "E.ON Next Energy Data is already configured",
@@ -58,6 +59,9 @@
           "gas_calorific_value": "Gas calorific value (MJ/m³; 0 keeps volume only)"
         }
       }
+    },
+    "error": {
+      "invalid_calorific_value": "Enter 0 for volume-only tracking or a calorific value between 37 and 43."
     }
   }
 }
