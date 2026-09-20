@@ -5,7 +5,10 @@
       "user": {
         "title": "Connect to E.ON Next",
         "description": "Your password is exchanged for a refresh token and is not stored. This integration is read-only.",
-        "data": {"email": "E.ON Next email", "password": "E.ON Next password"}
+        "data": {
+          "email": "E.ON Next email",
+          "password": "E.ON Next password"
+        }
       },
       "tariff": {
         "title": "Tariff and history",
@@ -22,7 +25,9 @@
       "reauth_confirm": {
         "title": "Reconnect E.ON Next",
         "description": "Enter the current E.ON Next password. It will be exchanged for a refresh token and discarded.",
-        "data": {"password": "E.ON Next password"}
+        "data": {
+          "password": "E.ON Next password"
+        }
       }
     },
     "error": {
@@ -42,7 +47,7 @@
     "step": {
       "init": {
         "title": "Tariff settings",
-        "description": "Changes recalculate the most recent 14 days and apply to future imports. Older cost history is unchanged.",
+        "description": "Changes recalculate the most recent 14 days and apply to future imports. Older cost history is unchanged. Gas tariff settings apply only to kWh meters; gas measured in m³ has consumption tracking only.",
         "data": {
           "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
           "electricity_peak_rate": "Electricity peak rate (£/kWh)",

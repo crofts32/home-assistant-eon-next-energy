@@ -134,14 +134,24 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_unknown_meter_unit_is_skipped(self):
         responses = [
             FakeResponse(200, {"data": {"viewer": {"accounts": [{"number": "A"}]}}}),
-            FakeResponse(200, {"data": {"properties": [{"gasMeterPoints": [{"meters": [{"id": "G", "consumptionUnits": "m3"}]}]}]}}),
+            FakeResponse(200, {"data": {"properties": [{"gasMeterPoints": [{"meters": [{"id": "G", "consumptionUnits": "unknown"}]}]}]}}),
         ]
         client = api.EonNextClient(FakeSession(responses), "refresh")
         client._access_token = "access"
         with self.assertLogs("eon_next_energy.api", level="WARNING") as logs:
             self.assertEqual(await client.async_get_meters(), [])
         self.assertIn("gas", logs.output[0])
-        self.assertIn("m3", logs.output[0])
+        self.assertIn("unknown", logs.output[0])
+
+    async def test_gas_volume_is_supported(self):
+        for unit in ("m3", "m³"):
+            responses = [
+                FakeResponse(200, {"data": {"viewer": {"accounts": [{"number": "A"}]}}}),
+                FakeResponse(200, {"data": {"properties": [{"gasMeterPoints": [{"meters": [{"id": "G", "consumptionUnits": unit}]}]}]}}),
+            ]
+            client = api.EonNextClient(FakeSession(responses), "refresh")
+            client._access_token = "access"
+            self.assertEqual(await client.async_get_meters(), [api.EonMeter("A", "G", "gas", unit)])
 
     async def test_supported_meter_survives_unsupported_meter(self):
         responses = [
@@ -163,7 +173,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
                                 "gasMeterPoints": [
                                     {
                                         "meters": [
-                                            {"id": "G", "consumptionUnits": "m3"}
+                                            {"id": "G", "consumptionUnits": "unknown"}
                                         ]
                                     }
                                 ],

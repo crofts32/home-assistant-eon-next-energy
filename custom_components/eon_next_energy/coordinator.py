@@ -20,12 +20,12 @@ from homeassistant.components.recorder.statistics import (
     statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy
+from homeassistant.const import UnitOfEnergy, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util.unit_conversion import EnergyConverter
+from homeassistant.util.unit_conversion import EnergyConverter, VolumeConverter
 
 from .api import (
     EonMeter,
@@ -66,7 +66,7 @@ class MeterImportResult:
     last_interval_end: datetime | None
     imported_hours: int
     consumption_statistic_id: str
-    cost_statistic_id: str
+    cost_statistic_id: str | None
 
 
 @dataclass(slots=True)
@@ -89,6 +89,8 @@ def _meter_key(meter: EonMeter) -> str:
 def _statistic_ids(meter: EonMeter) -> tuple[str, str]:
     key = _meter_key(meter)
     prefix = f"{DOMAIN}:{meter.fuel}_{key}"
+    if meter.fuel == "gas" and meter.unit in {"m3", "m³"}:
+        return f"{prefix}_volume", f"{prefix}_cost"
     return f"{prefix}_consumption", f"{prefix}_cost"
 
 
@@ -183,10 +185,12 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
     ) -> MeterImportResult:
         consumption_id, cost_id = _statistic_ids(meter)
         consumption_last = await self._last_statistic(consumption_id)
-        cost_last = await self._last_statistic(cost_id)
-        starts = [item[0] for item in (consumption_last, cost_last) if item[0]]
+        volume = meter.fuel == "gas" and meter.unit in {"m3", "m³"}
+        cost_last = (None, 0.0) if volume else await self._last_statistic(cost_id)
+        required = (consumption_last,) if volume else (consumption_last, cost_last)
+        starts = [item[0] for item in required if item[0]]
 
-        if len(starts) < 2:
+        if len(starts) < len(required):
             history_days = int(
                 self._setting(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
             )
@@ -202,24 +206,25 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
         consumption_sum = await self._sum_before(
             consumption_id, start, consumption_last
         )
-        cost_sum = await self._sum_before(cost_id, start, cost_last)
+        cost_sum = 0.0 if volume else await self._sum_before(cost_id, start, cost_last)
 
         intervals = await self.client.async_get_consumption(meter, start)
-        hourly = aggregate_complete_hours(intervals, meter.fuel, tariff)
+        hourly = aggregate_complete_hours(intervals, meter.fuel, tariff, meter.unit)
 
         consumption_stats: list[StatisticData] = []
         cost_stats: list[StatisticData] = []
         for item in hourly:
-            usage = float(item.consumption_kwh)
-            cost = float(item.cost_gbp)
+            usage = float(item.consumption)
             consumption_sum += usage
-            cost_sum += cost
             consumption_stats.append(
                 StatisticData(start=item.start, state=usage, sum=consumption_sum)
             )
-            cost_stats.append(
-                StatisticData(start=item.start, state=cost, sum=cost_sum)
-            )
+            if item.cost_gbp is not None:
+                cost = float(item.cost_gbp)
+                cost_sum += cost
+                cost_stats.append(
+                    StatisticData(start=item.start, state=cost, sum=cost_sum)
+                )
 
         name_prefix = f"E.ON Next {meter.fuel.title()} {ordinal}"
         consumption_metadata = StatisticMetaData(
@@ -228,8 +233,8 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             name=f"{name_prefix} Consumption",
             source=DOMAIN,
             statistic_id=consumption_id,
-            unit_class=EnergyConverter.UNIT_CLASS,
-            unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+            unit_class=VolumeConverter.UNIT_CLASS if volume else EnergyConverter.UNIT_CLASS,
+            unit_of_measurement=UnitOfVolume.CUBIC_METERS if volume else UnitOfEnergy.KILO_WATT_HOUR,
         )
         cost_metadata = StatisticMetaData(
             mean_type=StatisticMeanType.NONE,
@@ -244,7 +249,8 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             async_add_external_statistics(
                 self.hass, consumption_metadata, consumption_stats
             )
-            async_add_external_statistics(self.hass, cost_metadata, cost_stats)
+            if cost_stats:
+                async_add_external_statistics(self.hass, cost_metadata, cost_stats)
 
         last_end = max((item.end for item in intervals), default=None)
         return MeterImportResult(
@@ -253,7 +259,7 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             last_interval_end=last_end,
             imported_hours=len(hourly),
             consumption_statistic_id=consumption_id,
-            cost_statistic_id=cost_id,
+            cost_statistic_id=None if volume else cost_id,
         )
 
     async def _async_update_data(self) -> EonCoordinatorData:

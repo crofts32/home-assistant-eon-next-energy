@@ -71,5 +71,5 @@ class EonDataFreshnessSensor(CoordinatorEntity[EonNextCoordinator], SensorEntity
             "consumption_statistics": ", ".join(
                 item.consumption_statistic_id for item in meters
             ),
-            "cost_statistics": ", ".join(item.cost_statistic_id for item in meters),
+            "cost_statistics": ", ".join(item.cost_statistic_id for item in meters if item.cost_statistic_id),
         }

@@ -64,7 +64,7 @@ class EonInterval:
 
     start: datetime
     end: datetime
-    value_kwh: Decimal
+    value: Decimal
 
 
 LOGIN_MUTATION = """
@@ -300,7 +300,7 @@ class EonNextClient:
                         for meter in (point.get("meters") or []):
                             if isinstance(meter, dict) and meter.get("id"):
                                 unit = meter.get("consumptionUnits")
-                                if not isinstance(unit, str) or unit.lower() != "kwh":
+                                if not isinstance(unit, str) or not (unit.lower() == "kwh" or (fuel == "gas" and unit in {"m3", "m³"})):
                                     _LOGGER.warning(
                                         "Skipping E.ON %s meter with unsupported "
                                         "consumption unit: %s",

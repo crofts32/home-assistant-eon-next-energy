@@ -17,7 +17,7 @@ class IntervalLike(Protocol):
 
     start: datetime
     end: datetime
-    value_kwh: Decimal
+    value: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,8 +36,8 @@ class HourlyUsage:
     """Complete UTC hour of consumption and calculated cost."""
 
     start: datetime
-    consumption_kwh: Decimal
-    cost_gbp: Decimal
+    consumption: Decimal
+    cost_gbp: Decimal | None
 
 
 def electricity_rate_at(timestamp: datetime, tariff: Tariff) -> Decimal:
@@ -49,9 +49,12 @@ def electricity_rate_at(timestamp: datetime, tariff: Tariff) -> Decimal:
 
 
 def aggregate_complete_hours(
-    intervals: list[IntervalLike], fuel: str, tariff: Tariff
+    intervals: list[IntervalLike], fuel: str, tariff: Tariff, unit: str = "kWh"
 ) -> list[HourlyUsage]:
     """Combine two 30-minute readings into recorder-compatible UTC hours."""
+    volume = fuel == "gas" and unit in {"m3", "m³"}
+    if not volume and unit.lower() != "kwh":
+        raise ValueError("Unsupported consumption unit")
     grouped: dict[datetime, list[IntervalLike]] = defaultdict(list)
     for item in intervals:
         start_utc = item.start.astimezone(UTC)
@@ -71,12 +74,14 @@ def aggregate_complete_hours(
         if starts != {0, 30}:
             continue
 
-        consumption = sum((item.value_kwh for item in readings), Decimal("0"))
+        consumption = sum((item.value for item in readings), Decimal("0"))
         local_date = hour.astimezone(LONDON).date()
-        if fuel == "electricity":
+        if volume:
+            cost = None
+        elif fuel == "electricity":
             cost = sum(
                 (
-                    item.value_kwh * electricity_rate_at(item.start, tariff)
+                    item.value * electricity_rate_at(item.start, tariff)
                     for item in readings
                 ),
                 Decimal("0"),

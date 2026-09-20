@@ -16,7 +16,7 @@ smart-meter consumption into long-term statistics and the Energy dashboard.
 
 - Imports half-hour electricity and gas readings, aggregated into Home
   Assistant's hourly external-statistics format.
-- Creates cumulative consumption and cost statistics for each active meter.
+- Creates cumulative consumption statistics for each supported active meter, and cost statistics for meters measured in kWh.
 - Applies the configured VAT-inclusive tariff, including daily standing charges.
 - Polls every six hours and rewrites a rolling 14-day correction window so
   delayed or revised readings are repaired.
@@ -45,10 +45,12 @@ The client contains no account-balance, statement, payment, meter-reading
 submission, tariff switching, EV control or other mutation code. The only
 GraphQL mutation is the token exchange required for authentication.
 
-Meter units are read from E.ON and must be `kWh`; the integration skips meters
-with missing or unsupported units rather than importing them under the wrong
-unit. This can exclude a gas meter reported in cubic metres until a safe energy
-conversion is implemented. Export electricity meter points are ignored.
+Meter units are read from E.ON. Electricity must be `kWh`; gas can be `kWh`,
+`m3`, or `m³`. Gas volume is imported as native cubic metres using a separate
+volume statistic ID, without a guessed kWh conversion or cost statistic. Select
+it under Gas in the Energy dashboard with cost tracking off. Gas tariff settings
+apply only to gas meters reporting kWh. Missing or unsupported units are skipped.
+Export electricity meter points are ignored.
 
 This uses an undocumented private E.ON API and may require maintenance if E.ON
 changes it. It is not affiliated with or endorsed by E.ON.

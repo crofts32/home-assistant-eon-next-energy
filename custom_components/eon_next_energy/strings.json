@@ -47,7 +47,7 @@
     "step": {
       "init": {
         "title": "Tariff settings",
-        "description": "Changes recalculate the most recent 14 days and apply to future imports. Older cost history is unchanged.",
+        "description": "Changes recalculate the most recent 14 days and apply to future imports. Older cost history is unchanged. Gas tariff settings apply only to kWh meters; gas measured in m³ has consumption tracking only.",
         "data": {
           "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
           "electricity_peak_rate": "Electricity peak rate (£/kWh)",

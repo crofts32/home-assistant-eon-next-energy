@@ -29,7 +29,7 @@ LONDON = ZoneInfo("Europe/London")
 class Interval:
     start: datetime
     end: datetime
-    value_kwh: Decimal
+    value: Decimal
 
 
 class TariffCalculationTests(unittest.TestCase):
@@ -59,7 +59,7 @@ class TariffCalculationTests(unittest.TestCase):
             self.tariff,
         )
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].consumption_kwh, Decimal("2"))
+        self.assertEqual(rows[0].consumption, Decimal("2"))
         self.assertEqual(rows[0].cost_gbp, Decimal("0.738"))
 
     def test_electricity_seven_am_uses_peak_rate(self):
@@ -92,6 +92,19 @@ class TariffCalculationTests(unittest.TestCase):
             self.tariff,
         )
         self.assertEqual(rows[0].cost_gbp, Decimal("0.3728"))
+
+    def test_gas_volume_keeps_native_units_without_fabricating_cost(self):
+        for unit in ("m3", "m³"):
+            rows = calculations.aggregate_complete_hours(
+                self._hour(datetime(2026, 9, 18, 0, tzinfo=LONDON), "0.5", "0.25"),
+                "gas", self.tariff, unit,
+            )
+            self.assertEqual(rows[0].consumption, Decimal("0.75"))
+            self.assertIsNone(rows[0].cost_gbp)
+
+    def test_electricity_volume_is_rejected(self):
+        with self.assertRaises(ValueError):
+            calculations.aggregate_complete_hours([], "electricity", self.tariff, "m3")
 
     def test_incomplete_hour_is_not_imported(self):
         start = datetime(2026, 9, 18, 12, tzinfo=LONDON)
