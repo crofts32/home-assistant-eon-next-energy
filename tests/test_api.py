@@ -96,6 +96,15 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(api.EonNextApiError):
             await client.async_refresh_access_token()
 
+    async def test_rejected_credentials_are_an_authentication_error(self):
+        response = FakeResponse(
+            200,
+            {"errors": [{"extensions": {"errorCode": "KT-CT-1138"}}]},
+        )
+        client = api.EonNextClient(FakeSession([response]))
+        with self.assertRaises(api.EonNextAuthenticationError):
+            await client.async_login("user@example.invalid", "wrong-password")
+
     async def test_null_points_and_export_meter_are_skipped(self):
         responses = [
             FakeResponse(200, {"data": {"viewer": {"accounts": [{"number": "A"}]}}}),

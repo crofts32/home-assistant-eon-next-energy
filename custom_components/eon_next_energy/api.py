@@ -130,6 +130,7 @@ _AUTH_ERROR_CODES = {
     "KT-CT-1121",  # Invalid token type.
     "KT-CT-1134",  # Invalid authentication input.
     "KT-CT-1135",  # Invalid authentication input.
+    "KT-CT-1138",  # Credentials rejected.
 }
 
 
