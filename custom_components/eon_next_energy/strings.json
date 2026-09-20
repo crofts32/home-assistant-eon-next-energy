@@ -1,0 +1,58 @@
+{
+  "title": "E.ON Next Energy Data",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to E.ON Next",
+        "description": "Your password is exchanged for a refresh token and is not stored. This integration is read-only.",
+        "data": {
+          "email": "E.ON Next email",
+          "password": "E.ON Next password"
+        }
+      },
+      "tariff": {
+        "title": "Tariff and history",
+        "description": "Rates are VAT-inclusive and entered in pounds. Your Next Drive Smart cheap period is 00:00–07:00 Europe/London.",
+        "data": {
+          "history_days": "Initial history to import (days)",
+          "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
+          "electricity_peak_rate": "Electricity peak rate (£/kWh)",
+          "electricity_standing_charge": "Electricity standing charge (£/day)",
+          "gas_rate": "Gas rate (£/kWh)",
+          "gas_standing_charge": "Gas standing charge (£/day)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect E.ON Next",
+        "description": "Enter the current E.ON Next password. It will be exchanged for a refresh token and discarded.",
+        "data": {
+          "password": "E.ON Next password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to E.ON Next",
+      "invalid_auth": "E.ON Next rejected the credentials",
+      "unknown": "E.ON Next returned an unexpected response"
+    },
+    "abort": {
+      "already_configured": "E.ON Next Energy Data is already configured",
+      "reauth_successful": "E.ON Next was reconnected"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tariff settings",
+        "description": "Changes recalculate the most recent 14 days and apply to future imports. Older cost history is unchanged.",
+        "data": {
+          "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
+          "electricity_peak_rate": "Electricity peak rate (£/kWh)",
+          "electricity_standing_charge": "Electricity standing charge (£/day)",
+          "gas_rate": "Gas rate (£/kWh)",
+          "gas_standing_charge": "Gas standing charge (£/day)"
+        }
+      }
+    }
+  }
+}
