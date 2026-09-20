@@ -106,6 +106,12 @@ class TariffCalculationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculations.aggregate_complete_hours([], "electricity", self.tariff, "m3")
 
+    def test_gas_conversion_formula_and_invalid_calorific_values(self):
+        self.assertEqual(calculations.gas_kwh_from_volume(Decimal("1"), Decimal("39.5")), Decimal("11.22063333333333333333333333"))
+        for value in ("0", "36.9", "43.1", "NaN", "Infinity"):
+            with self.assertRaises(ValueError):
+                calculations.gas_kwh_from_volume(Decimal("1"), Decimal(value))
+
     def test_incomplete_hour_is_not_imported(self):
         start = datetime(2026, 9, 18, 12, tzinfo=LONDON)
         rows = calculations.aggregate_complete_hours(

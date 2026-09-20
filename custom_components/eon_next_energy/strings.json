@@ -19,7 +19,8 @@
           "electricity_peak_rate": "Electricity peak rate (£/kWh)",
           "electricity_standing_charge": "Electricity standing charge (£/day)",
           "gas_rate": "Gas rate (£/kWh)",
-          "gas_standing_charge": "Gas standing charge (£/day)"
+          "gas_standing_charge": "Gas standing charge (£/day)",
+          "gas_calorific_value": "Gas calorific value (MJ/m³; 0 keeps volume only)"
         }
       },
       "reauth_confirm": {
@@ -47,13 +48,14 @@
     "step": {
       "init": {
         "title": "Tariff settings",
-        "description": "Changes recalculate the most recent 14 days and apply to future imports. Older cost history is unchanged. Gas tariff settings apply only to kWh meters; gas measured in m³ has consumption tracking only.",
+        "description": "Gas conversion uses m³ × 1.02264 × calorific value ÷ 3.6. Enter your bill value (37–43), or 0 to keep native volume. Converted gas kWh and costs are estimates. Converted gas recalculates the configured history window on every update; other tariff changes recalculate 14 days. Older records outside these windows remain unchanged.",
         "data": {
           "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
           "electricity_peak_rate": "Electricity peak rate (£/kWh)",
           "electricity_standing_charge": "Electricity standing charge (£/day)",
           "gas_rate": "Gas rate (£/kWh)",
-          "gas_standing_charge": "Gas standing charge (£/day)"
+          "gas_standing_charge": "Gas standing charge (£/day)",
+          "gas_calorific_value": "Gas calorific value (MJ/m³; 0 keeps volume only)"
         }
       }
     }

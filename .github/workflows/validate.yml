@@ -20,6 +20,11 @@ jobs:
           python-version: "3.12"
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test energy chart calculations
+        run: node tests/test_energy_summary.mjs
       - name: Compile Python sources
         run: python -m compileall -q custom_components tests tools/eon_half_hour_probe.py
 

@@ -10,6 +10,9 @@ CONF_HISTORY_DAYS = "history_days"
 CONF_ELECTRICITY_OFFPEAK_RATE = "electricity_offpeak_rate"
 CONF_ELECTRICITY_PEAK_RATE = "electricity_peak_rate"
 CONF_ELECTRICITY_STANDING_CHARGE = "electricity_standing_charge"
+CONF_GAS_CALORIFIC_VALUE = "gas_calorific_value"
+DEFAULT_GAS_CALORIFIC_VALUE = 0.0  # Zero keeps native volume tracking.
+
 CONF_GAS_RATE = "gas_rate"
 CONF_GAS_STANDING_CHARGE = "gas_standing_charge"
 

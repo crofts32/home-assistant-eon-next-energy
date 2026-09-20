@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from hashlib import sha256
@@ -34,11 +34,13 @@ from .api import (
     EonNextClient,
     EonNextConnectionError,
 )
-from .calculations import LONDON, Tariff, aggregate_complete_hours
+from .calculations import LONDON, Tariff, aggregate_complete_hours, gas_kwh_from_volume
 from .const import (
     CONF_ELECTRICITY_OFFPEAK_RATE,
     CONF_ELECTRICITY_PEAK_RATE,
     CONF_ELECTRICITY_STANDING_CHARGE,
+    CONF_GAS_CALORIFIC_VALUE,
+    DEFAULT_GAS_CALORIFIC_VALUE,
     CONF_GAS_RATE,
     CONF_GAS_STANDING_CHARGE,
     CONF_HISTORY_DAYS,
@@ -183,14 +185,19 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
     async def _import_meter(
         self, meter: EonMeter, ordinal: int, tariff: Tariff
     ) -> MeterImportResult:
+        calorific_value = Decimal(str(self._setting(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE)))
+        estimated = meter.fuel == "gas" and meter.unit in {"m3", "m³"} and calorific_value != 0
         consumption_id, cost_id = _statistic_ids(meter)
+        if estimated:
+            prefix = f"{DOMAIN}:gas_{_meter_key(meter)}_estimated"
+            consumption_id, cost_id = f"{prefix}_consumption", f"{prefix}_cost"
         consumption_last = await self._last_statistic(consumption_id)
-        volume = meter.fuel == "gas" and meter.unit in {"m3", "m³"}
+        volume = meter.fuel == "gas" and meter.unit in {"m3", "m³"} and not estimated
         cost_last = (None, 0.0) if volume else await self._last_statistic(cost_id)
         required = (consumption_last,) if volume else (consumption_last, cost_last)
         starts = [item[0] for item in required if item[0]]
 
-        if len(starts) < len(required):
+        if estimated or len(starts) < len(required):
             history_days = int(
                 self._setting(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
             )
@@ -209,7 +216,9 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
         cost_sum = 0.0 if volume else await self._sum_before(cost_id, start, cost_last)
 
         intervals = await self.client.async_get_consumption(meter, start)
-        hourly = aggregate_complete_hours(intervals, meter.fuel, tariff, meter.unit)
+        if estimated:
+            intervals = [replace(item, value=gas_kwh_from_volume(item.value, calorific_value)) for item in intervals]
+        hourly = aggregate_complete_hours(intervals, meter.fuel, tariff, "kWh" if estimated else meter.unit)
 
         consumption_stats: list[StatisticData] = []
         cost_stats: list[StatisticData] = []
@@ -226,7 +235,7 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
                     StatisticData(start=item.start, state=cost, sum=cost_sum)
                 )
 
-        name_prefix = f"E.ON Next {meter.fuel.title()} {ordinal}"
+        name_prefix = f"E.ON Next {meter.fuel.title()} {ordinal}" + (" Estimated" if estimated else "")
         consumption_metadata = StatisticMetaData(
             mean_type=StatisticMeanType.NONE,
             has_sum=True,

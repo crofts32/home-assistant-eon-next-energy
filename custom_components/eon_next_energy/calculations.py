@@ -95,3 +95,10 @@ def aggregate_complete_hours(
         charged_dates.add(local_date)
         result.append(HourlyUsage(hour, consumption, cost))
     return result
+
+
+def gas_kwh_from_volume(volume: Decimal, calorific_value: Decimal) -> Decimal:
+    """Estimate gas energy using the UK metric gas-billing formula."""
+    if not calorific_value.is_finite() or not Decimal("37") <= calorific_value <= Decimal("43"):
+        raise ValueError("Calorific value must be between 37 and 43 MJ/m³")
+    return volume * Decimal("1.02264") * calorific_value / Decimal("3.6")

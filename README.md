@@ -47,9 +47,15 @@ GraphQL mutation is the token exchange required for authentication.
 
 Meter units are read from E.ON. Electricity must be `kWh`; gas can be `kWh`,
 `m3`, or `m³`. Gas volume is imported as native cubic metres using a separate
-volume statistic ID, without a guessed kWh conversion or cost statistic. Select
-it under Gas in the Energy dashboard with cost tracking off. Gas tariff settings
-apply only to gas meters reporting kWh. Missing or unsupported units are skipped.
+volume statistic ID by default. To enable estimated gas energy and costs, set
+**Gas calorific value** in integration options to the value on your bill (37–43).
+The conversion is `m³ × 1.02264 × calorific value ÷ 3.6`. Converted consumption
+and costs use separate statistic IDs labelled Estimated. Replace the dashboard's
+gas source with the estimated consumption and estimated cost statistics; do not
+add them alongside the native-volume source. Setting 0 restores volume-only mode.
+Converted gas recalculates the configured history window on every update; older
+records outside that window retain their earlier conversion and tariff.
+Missing or unsupported units are skipped.
 Export electricity meter points are ignored.
 
 This uses an undocumented private E.ON API and may require maintenance if E.ON
@@ -76,3 +82,22 @@ statistic IDs created for each fuel.
 
 Start with the default 30-day import and compare daily electricity, gas, and
 cost totals against the E.ON Next portal before relying on the statistics.
+
+## Energy summary card
+
+Add `/eon-next-energy/energy-summary.js?v=0.2.0` as a JavaScript module resource
+in dashboard resources, then add a manual card:
+
+```yaml
+type: custom:eon-energy-summary
+```
+
+The card discovers redacted statistic IDs from the integration's freshness
+entities. It shows a daily stacked electricity/gas chart, selected-period
+consumption and total cost, and independent month-to-date metrics. Dates use
+Europe/London including DST. Costs include the standing charges already written
+by the importer. Gas conversion must be enabled for combined totals; missing
+fuel data displays a dash instead of an invented zero. Delayed or incomplete
+imports make totals partial. Hypervolt is already included in grid electricity
+and is never added to the combined total. Data is read through Home Assistant's
+authenticated recorder connection; no data is sent to any third party.

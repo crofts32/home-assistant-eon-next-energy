@@ -1,7 +1,9 @@
 {
   "domain": "eon_next_energy",
   "name": "E.ON Next Energy Data",
-  "codeowners": ["@crofts32"],
+  "codeowners": [
+    "@crofts32"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/crofts32/home-assistant-eon-next-energy",
   "integration_type": "service",
@@ -9,5 +11,8 @@
   "issue_tracker": "https://github.com/crofts32/home-assistant-eon-next-energy/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.1.4"
+  "version": "0.2.0",
+  "dependencies": [
+    "http"
+  ]
 }

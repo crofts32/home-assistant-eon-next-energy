@@ -24,6 +24,8 @@ from .const import (
     CONF_ELECTRICITY_PEAK_RATE,
     CONF_ELECTRICITY_STANDING_CHARGE,
     CONF_EMAIL,
+    CONF_GAS_CALORIFIC_VALUE,
+    DEFAULT_GAS_CALORIFIC_VALUE,
     CONF_GAS_RATE,
     CONF_GAS_STANDING_CHARGE,
     CONF_HISTORY_DAYS,
@@ -70,6 +72,10 @@ def _settings_schema(
                 default=defaults.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS),
             )
         ] = vol.All(vol.Coerce(int), vol.Range(min=7, max=365))
+    fields[vol.Required(
+        CONF_GAS_CALORIFIC_VALUE,
+        default=defaults.get(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE),
+    )] = vol.All(vol.Coerce(float), vol.Any(0.0, vol.Range(min=37, max=43)))
     fields.update(
         {
             vol.Required(
