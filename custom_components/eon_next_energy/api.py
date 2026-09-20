@@ -301,9 +301,13 @@ class EonNextClient:
                             if isinstance(meter, dict) and meter.get("id"):
                                 unit = meter.get("consumptionUnits")
                                 if not isinstance(unit, str) or unit.lower() != "kwh":
-                                    raise EonNextApiError(
-                                        "E.ON returned an unsupported consumption unit"
+                                    _LOGGER.warning(
+                                        "Skipping E.ON %s meter with unsupported "
+                                        "consumption unit: %s",
+                                        fuel,
+                                        unit if isinstance(unit, str) else "missing",
                                     )
+                                    continue
                                 meters.append(
                                     EonMeter(account_number, meter["id"], fuel, unit)
                                 )

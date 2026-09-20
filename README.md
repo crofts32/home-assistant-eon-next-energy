@@ -45,8 +45,10 @@ The client contains no account-balance, statement, payment, meter-reading
 submission, tariff switching, EV control or other mutation code. The only
 GraphQL mutation is the token exchange required for authentication.
 
-Meter units are read from E.ON and must be `kWh`; the integration refuses to
-import an unknown unit. Export electricity meter points are ignored.
+Meter units are read from E.ON and must be `kWh`; the integration skips meters
+with missing or unsupported units rather than importing them under the wrong
+unit. This can exclude a gas meter reported in cubic metres until a safe energy
+conversion is implemented. Export electricity meter points are ignored.
 
 This uses an undocumented private E.ON API and may require maintenance if E.ON
 changes it. It is not affiliated with or endorsed by E.ON.

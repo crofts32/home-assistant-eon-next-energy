@@ -131,15 +131,53 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         client._access_token = "access"
         self.assertEqual(await client.async_get_meters(), [])
 
-    async def test_unknown_meter_unit_is_refused(self):
+    async def test_unknown_meter_unit_is_skipped(self):
         responses = [
             FakeResponse(200, {"data": {"viewer": {"accounts": [{"number": "A"}]}}}),
             FakeResponse(200, {"data": {"properties": [{"gasMeterPoints": [{"meters": [{"id": "G", "consumptionUnits": "m3"}]}]}]}}),
         ]
         client = api.EonNextClient(FakeSession(responses), "refresh")
         client._access_token = "access"
-        with self.assertRaises(api.EonNextApiError):
-            await client.async_get_meters()
+        with self.assertLogs("eon_next_energy.api", level="WARNING") as logs:
+            self.assertEqual(await client.async_get_meters(), [])
+        self.assertIn("gas", logs.output[0])
+        self.assertIn("m3", logs.output[0])
+
+    async def test_supported_meter_survives_unsupported_meter(self):
+        responses = [
+            FakeResponse(200, {"data": {"viewer": {"accounts": [{"number": "A"}]}}}),
+            FakeResponse(
+                200,
+                {
+                    "data": {
+                        "properties": [
+                            {
+                                "electricityMeterPoints": [
+                                    {
+                                        "direction": "IMPORT",
+                                        "meters": [
+                                            {"id": "E", "consumptionUnits": "kWh"}
+                                        ],
+                                    }
+                                ],
+                                "gasMeterPoints": [
+                                    {
+                                        "meters": [
+                                            {"id": "G", "consumptionUnits": "m3"}
+                                        ]
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                },
+            ),
+        ]
+        client = api.EonNextClient(FakeSession(responses), "refresh")
+        client._access_token = "access"
+        with self.assertLogs("eon_next_energy.api", level="WARNING"):
+            meters = await client.async_get_meters()
+        self.assertEqual(meters, [api.EonMeter("A", "E", "electricity", "kWh")])
 
 
 if __name__ == "__main__":
