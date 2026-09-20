@@ -40,6 +40,18 @@ from .const import (
 CONF_PASSWORD = "password"
 
 
+class EonNextLoginResponseError(EonNextApiError):
+    """E.ON rejected login without a recognized credential error."""
+
+
+class EonNextMeterDiscoveryError(EonNextApiError):
+    """Login succeeded but account or meter discovery failed."""
+
+
+class EonNextNoMetersError(EonNextApiError):
+    """Login succeeded but no active meters were returned."""
+
+
 def _password_selector() -> selector.TextSelector:
     return selector.TextSelector(
         selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
@@ -98,10 +110,16 @@ def _settings_schema(
 async def _authenticate(hass, email: str, password: str) -> str:
     """Authenticate and return only a refresh token."""
     client = EonNextClient(async_get_clientsession(hass))
-    tokens = await client.async_login(email, password)
-    meters = await client.async_get_meters()
+    try:
+        tokens = await client.async_login(email, password)
+    except EonNextApiError as err:
+        raise EonNextLoginResponseError from err
+    try:
+        meters = await client.async_get_meters()
+    except EonNextApiError as err:
+        raise EonNextMeterDiscoveryError from err
     if not meters:
-        raise EonNextApiError("No active meters were returned")
+        raise EonNextNoMetersError
     return tokens.refresh_token
 
 
@@ -127,6 +145,12 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except EonNextConnectionError:
                 errors["base"] = "cannot_connect"
+            except EonNextLoginResponseError:
+                errors["base"] = "login_response"
+            except EonNextMeterDiscoveryError:
+                errors["base"] = "meter_discovery"
+            except EonNextNoMetersError:
+                errors["base"] = "no_meters"
             except EonNextApiError:
                 errors["base"] = "unknown"
             else:
@@ -190,6 +214,12 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except EonNextConnectionError:
                 errors["base"] = "cannot_connect"
+            except EonNextLoginResponseError:
+                errors["base"] = "login_response"
+            except EonNextMeterDiscoveryError:
+                errors["base"] = "meter_discovery"
+            except EonNextNoMetersError:
+                errors["base"] = "no_meters"
             except EonNextApiError:
                 errors["base"] = "unknown"
             else:

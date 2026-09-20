@@ -33,6 +33,9 @@
     "error": {
       "cannot_connect": "Could not connect to E.ON Next",
       "invalid_auth": "E.ON Next rejected the credentials",
+      "login_response": "E.ON Next rejected the login request with an unrecognized response",
+      "meter_discovery": "Login succeeded, but E.ON Next rejected the account or meter query",
+      "no_meters": "Login succeeded, but E.ON Next returned no active meters",
       "unknown": "E.ON Next returned an unexpected response"
     },
     "abort": {

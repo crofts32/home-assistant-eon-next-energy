@@ -93,8 +93,11 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_unknown_graphql_error_is_not_authentication_error(self):
         response = FakeResponse(200, {"errors": [{"extensions": {"code": "OTHER"}}]})
         client = api.EonNextClient(FakeSession([response]), "refresh")
-        with self.assertRaises(api.EonNextApiError):
-            await client.async_refresh_access_token()
+        with self.assertLogs("eon_next_energy.api", level="WARNING") as logs:
+            with self.assertRaises(api.EonNextApiError):
+                await client.async_refresh_access_token()
+        self.assertIn("Login", logs.output[0])
+        self.assertIn("OTHER", logs.output[0])
 
     async def test_rejected_credentials_are_an_authentication_error(self):
         response = FakeResponse(

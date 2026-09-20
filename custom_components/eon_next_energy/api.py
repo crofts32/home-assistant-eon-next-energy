@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+import logging
 from typing import Any
 
 from aiohttp import (
@@ -17,6 +18,8 @@ from aiohttp import (
 )
 
 from .const import API_URL
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class EonNextError(Exception):
@@ -217,10 +220,14 @@ class EonNextClient:
             raise EonNextApiError("E.ON returned an invalid response")
         errors = body.get("errors")
         if errors:
-            if authentication_request and (
-                _graphql_error_codes(errors) & _AUTH_ERROR_CODES
-            ):
+            error_codes = _graphql_error_codes(errors)
+            if authentication_request and (error_codes & _AUTH_ERROR_CODES):
                 raise EonNextAuthenticationError("E.ON authentication failed")
+            _LOGGER.warning(
+                "E.ON GraphQL operation %s failed with error codes: %s",
+                operation,
+                ", ".join(sorted(error_codes)) or "unclassified",
+            )
             raise EonNextApiError("E.ON rejected a read-only data request")
         data = body.get("data")
         if not isinstance(data, dict):
