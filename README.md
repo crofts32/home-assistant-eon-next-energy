@@ -85,7 +85,7 @@ cost totals against the E.ON Next portal before relying on the statistics.
 
 ## Energy summary card
 
-Add `/eon-next-energy/energy-summary.js?v=0.2.0` as a JavaScript module resource
+Add `/eon-next-energy/energy-summary.js?v=0.3.0` as a JavaScript module resource
 in dashboard resources, then add a manual card:
 
 ```yaml
@@ -99,5 +99,7 @@ Europe/London including DST. Costs include the standing charges already written
 by the importer. Gas conversion must be enabled for combined totals; missing
 fuel data displays a dash instead of an invented zero. Delayed or incomplete
 imports make totals partial. Hypervolt is already included in grid electricity
-and is never added to the combined total. Data is read through Home Assistant's
-authenticated recorder connection; no data is sent to any third party.
+and is never added to the combined total. A live-home section shows Nest
+temperature, target, humidity and heating state alongside Hypervolt connection,
+charging readiness, power and current-session energy. Data is read through Home
+Assistant's authenticated connection; no data is sent to any third party.
