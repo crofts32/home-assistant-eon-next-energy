@@ -93,8 +93,9 @@ type: custom:eon-energy-summary
 ```
 
 The card discovers redacted statistic IDs from the integration's freshness
-entities. It shows a daily stacked electricity/gas chart, selected-period
-consumption and total cost, and independent month-to-date metrics. Dates use
+entities. It shows a daily stacked chart with peak and off-peak electricity,
+estimated gas, and EV-charge-day markers, plus selected-period consumption and
+total cost and independent month-to-date metrics. Dates use
 Europe/London including DST. Costs include the standing charges already written
 by the importer. Gas conversion must be enabled for combined totals; missing
 fuel data displays a dash instead of an invented zero. Delayed or incomplete

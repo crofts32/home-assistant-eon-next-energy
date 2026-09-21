@@ -17,10 +17,12 @@ const number=(value)=>value===null?"—":value.toLocaleString("en-GB",{maximumFr
 const money=(value)=>value===null?"—":value.toLocaleString("en-GB",{style:"currency",currency:"GBP"});
 const escapeText=(value)=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const displayDate=(day)=>new Intl.DateTimeFormat("en-GB",{day:"numeric",month:"short",year:"numeric",timeZone:TZ}).format(new Date(day+"T12:00:00Z"));
+const londonHour=(time)=>Number(new Intl.DateTimeFormat("en-GB",{timeZone:TZ,hour:"2-digit",hourCycle:"h23"}).format(new Date(time)));
 function summarize(data, ids, from, to) {
   const start=londonMidnight(from), end=londonMidnight(shiftDay(to,1));
   let sum=0,count=0,latest=null;
   const days=new Map();
+  const peakDays=new Map(),offpeakDays=new Map();
   const hours=new Set();
   for(const id of ids) for(const row of data[id]||[]) {
     if(row.start<start || row.start>=end || !Number.isFinite(row.state)) continue;
@@ -29,8 +31,20 @@ function summarize(data, ids, from, to) {
     hours.add(row.start);
     const key=dateKey(row.start);
     days.set(key,(days.get(key)||0)+row.state);
+    const tariffDays=londonHour(row.start)<7?offpeakDays:peakDays;
+    tariffDays.set(key,(tariffDays.get(key)||0)+row.state);
   }
-  return {sum:count?sum:null,count,latest,days,hours:hours.size};
+  return {sum:count?sum:null,count,latest,days,peakDays,offpeakDays,hours:hours.size};
+}
+function summarizeChargeHistory(rows=[]) {
+  const days=new Map();let previous=null;
+  for(const row of rows) {
+    const value=Number(row.s);if(!Number.isFinite(value))continue;
+    const increment=previous===null?0:value>=previous?value-previous:value;
+    if(increment>0){const key=dateKey(row.lu*1000);days.set(key,(days.get(key)||0)+increment/1000);}
+    previous=value;
+  }
+  return days;
 }
 class EonEnergySummary extends HTMLElement {
   setConfig(config) {this._config=config;this._from=monthStart(dateKey(Date.now()));this._to=dateKey(Date.now());this._render();}
@@ -68,6 +82,14 @@ class EonEnergySummary extends HTMLElement {
       const first=this._from<monthStart(now)?this._from:monthStart(now);
       const last=this._to>now?this._to:now;
       this._data=await this._hass.callWS({type:"recorder/statistics_during_period",start_time:new Date(londonMidnight(first)).toISOString(),end_time:new Date(londonMidnight(shiftDay(last,1))).toISOString(),statistic_ids:all,period:"hour",types:["state"]});
+      this._chargeDays=new Map();
+      const session=this._state("sensor","hypervolt session energy","sensor.hypervolt_216454544628214346_hypervolt_session_energy");
+      if(session){
+        try{
+          const history=await this._hass.callWS({type:"history/history_during_period",start_time:new Date(londonMidnight(first)).toISOString(),end_time:new Date(londonMidnight(shiftDay(last,1))).toISOString(),entity_ids:[session.entity_id],minimal_response:true,no_attributes:true,significant_changes_only:false});
+          this._chargeDays=summarizeChargeHistory(history[session.entity_id]);
+        }catch(_error){/* Energy data remains usable if recorder history is unavailable. */}
+      }
       this._loaded={from:this._from,to:this._to};
     }catch(error){this._error="Energy data could not be loaded. Check the E.ON integration, then refresh.";this._data=null;}
     finally{this._busy=false;this._render();}
@@ -96,10 +118,11 @@ class EonEnergySummary extends HTMLElement {
     let svg=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily electricity and estimated gas consumption stacked in kWh">`;
     for(let i=0;i<=4;i++){const y=bottom-plot*i/4;svg+=`<line x1="${left}" x2="880" y1="${y}" y2="${y}" class="grid"/><text x="40" y="${y+4}" text-anchor="end">${number(max*i/4)}</text>`;}
     days.forEach((day,i)=>{
-      const e=totals.electricity.days.get(day),g=totals.gas.days.get(day),x=left+i*step+step*.15,bw=step*.7,eh=(e||0)/max*plot,gh=(g||0)/max*plot;
-      const title=`${displayDate(day)} · Electricity ${e===undefined?"no data":number(e)+" kWh"} · Gas ${g===undefined?"no data":number(g)+" kWh (estimated)"}`;
-      if(e!==undefined)svg+=`<rect x="${x}" y="${bottom-eh}" width="${bw}" height="${eh}" class="electricity"><title>${title}</title></rect>`;
-      if(g!==undefined)svg+=`<rect x="${x}" y="${bottom-eh-gh}" width="${bw}" height="${gh}" class="gas"><title>${title}</title></rect>`;
+      const e=totals.electricity.days.get(day),offpeak=totals.electricity.offpeakDays.get(day)||0,peak=totals.electricity.peakDays.get(day)||0,g=totals.gas.days.get(day),ev=this._chargeDays?.get(day)||0,x=left+i*step+step*.15,bw=step*.7,oh=offpeak/max*plot,ph=peak/max*plot,gh=(g||0)/max*plot;
+      const title=`${displayDate(day)} · Off-peak electricity ${number(offpeak)} kWh · Peak electricity ${number(peak)} kWh · Gas ${g===undefined?"no data":number(g)+" kWh (estimated)"}${ev?` · EV charging ${number(ev)} kWh`:""}`;
+      if(e!==undefined){svg+=`<rect x="${x}" y="${bottom-oh}" width="${bw}" height="${oh}" class="electricity-offpeak"><title>${title}</title></rect>`;svg+=`<rect x="${x}" y="${bottom-oh-ph}" width="${bw}" height="${ph}" class="electricity-peak"><title>${title}</title></rect>`;}
+      if(g!==undefined)svg+=`<rect x="${x}" y="${bottom-oh-ph-gh}" width="${bw}" height="${gh}" class="gas"><title>${title}</title></rect>`;
+      if(ev)svg+=`<circle cx="${x+bw/2}" cy="${Math.max(7,bottom-oh-ph-gh-7)}" r="4" class="ev-marker"><title>${displayDate(day)} · EV charging ${number(ev)} kWh</title></circle>`;
       if(e===undefined&&g===undefined)svg+=`<circle cx="${x+bw/2}" cy="${bottom-3}" r="2" class="missing"><title>${title}</title></circle>`;
       if(i%Math.max(1,Math.ceil(days.length/12))===0||i===days.length-1)svg+=`<text x="${x+bw/2}" y="242" text-anchor="middle">${day.slice(8)}/${day.slice(5,7)}</text>`;
     });
@@ -121,14 +144,14 @@ class EonEnergySummary extends HTMLElement {
     const reading=(state)=>state&&state.state!=="unknown"&&state.state!=="unavailable"?`${escapeText(state.state)}${state.attributes?.unit_of_measurement?" "+escapeText(state.attributes.unit_of_measurement):""}`:"—";
     const freshness=(this._freshness||[]).map(f=>`${f.gas?"Gas":"Electricity"}: ${Number.isNaN(Date.parse(f.time))?"waiting for data":new Intl.DateTimeFormat("en-GB",{timeZone:TZ,dateStyle:"medium",timeStyle:"short"}).format(new Date(f.time))}`).join(" · ");
     this.shadowRoot.innerHTML=`<style>
-    :host{display:block;color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui)}ha-card{padding:24px;border-radius:18px}h1{font-size:25px;margin:0 0 4px}h2{font-size:18px;margin:26px 0 12px}.muted{color:var(--secondary-text-color);font-size:13px;line-height:1.6}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:20px 0 12px}label{font-size:12px;display:grid;gap:5px}input,button{font:inherit;color:inherit;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:8px;padding:9px 12px}button{cursor:pointer}button:disabled{opacity:.45;cursor:wait}.chips{display:flex;gap:8px;flex-wrap:wrap}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0}.live-cards{grid-template-columns:repeat(2,1fr)}.metric{padding:16px;border:1px solid var(--divider-color);border-radius:12px}.metric strong{display:block;font-size:26px;margin-top:8px}.range{font-size:16px;font-weight:600;margin:18px 0}.legend{display:flex;gap:20px;font-size:13px}.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}.electricity,.electricity-dot{fill:#53a9f7;background:#53a9f7}.gas,.gas-dot{fill:#f1a55b;background:#f1a55b}.missing{fill:var(--disabled-text-color)}svg{width:100%;height:auto}svg text{fill:var(--secondary-text-color);font-size:11px}.grid{stroke:var(--divider-color);stroke-width:1}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:12px 4px;border-bottom:1px solid var(--divider-color);text-align:right}td:first-child,th:first-child{text-align:left}tfoot{font-weight:700}a{color:var(--primary-color)}.error{padding:18px;color:var(--error-color)}@media(max-width:600px){ha-card{padding:16px}.cards{grid-template-columns:1fr}.metric strong{font-size:23px}.controls input{max-width:145px}}</style>
+    :host{display:block;color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,system-ui)}ha-card{padding:24px;border-radius:18px}h1{font-size:25px;margin:0 0 4px}h2{font-size:18px;margin:26px 0 12px}.muted{color:var(--secondary-text-color);font-size:13px;line-height:1.6}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:20px 0 12px}label{font-size:12px;display:grid;gap:5px}input,button{font:inherit;color:inherit;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:8px;padding:9px 12px}button{cursor:pointer}button:disabled{opacity:.45;cursor:wait}.chips{display:flex;gap:8px;flex-wrap:wrap}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0}.live-cards{grid-template-columns:repeat(2,1fr)}.metric{padding:16px;border:1px solid var(--divider-color);border-radius:12px}.metric strong{display:block;font-size:26px;margin-top:8px}.range{font-size:16px;font-weight:600;margin:18px 0}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px}.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}.electricity-peak,.peak-dot{fill:#53a9f7;background:#53a9f7}.electricity-offpeak,.offpeak-dot{fill:#3657d6;background:#3657d6}.gas,.gas-dot{fill:#f1a55b;background:#f1a55b}.ev-marker,.ev-dot{fill:#b66cff;background:#b66cff}.ev-dot{border-radius:50%}.missing{fill:var(--disabled-text-color)}svg{width:100%;height:auto}svg text{fill:var(--secondary-text-color);font-size:11px}.grid{stroke:var(--divider-color);stroke-width:1}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:12px 4px;border-bottom:1px solid var(--divider-color);text-align:right}td:first-child,th:first-child{text-align:left}tfoot{font-weight:700}a{color:var(--primary-color)}.error{padding:18px;color:var(--error-color)}@media(max-width:600px){ha-card{padding:16px}.cards{grid-template-columns:1fr}.metric strong{font-size:23px}.controls input{max-width:145px}}</style>
     <ha-card><h1>Home energy</h1><div class="muted">Electricity + estimated gas · Europe/London</div>
     <div class="controls"><label>From<input id="from" type="date" value="${this._from}" max="${now}"></label><label>To<input id="to" type="date" value="${this._to}" max="${now}"></label><button id="apply" ${this._busy?"disabled":""}>Apply dates</button><button id="refresh" ${this._busy?"disabled":""}>Refresh</button></div>
     <div class="chips"><button data-preset="today">Today</button><button data-preset="yesterday">Yesterday</button><button data-preset="month">Month so far</button><button data-preset="lastmonth">Last month</button></div>
     <div class="range">${displayDate(this._from)}${this._from===this._to?"":" – "+displayDate(this._to)}</div>
     ${this._error?`<div class="error">${escapeText(this._error)}</div>`:""}
     ${!ready?'<p class="muted">Loading recorded energy…</p>':`
-    <div class="legend"><span><i class="dot electricity-dot"></i>Electricity</span><span><i class="dot gas-dot"></i>Gas (estimated)</span><span>kWh per day</span></div>
+    <div class="legend"><span><i class="dot offpeak-dot"></i>Electricity · off-peak 00:00–07:00</span><span><i class="dot peak-dot"></i>Electricity · peak</span><span><i class="dot gas-dot"></i>Gas (estimated)</span><span><i class="dot ev-dot"></i>EV charge day</span><span>kWh per day</span></div>
     ${this._chart(totals)}
     <h2>Totals · selected dates</h2><table><thead><tr><th>Source</th><th>Consumption</th><th>Cost</th></tr></thead><tbody>
     <tr><td>Electricity</td><td>${number(totals.electricity.sum)} kWh</td><td>${money(totals.electricityCost.sum)}</td></tr>
@@ -162,4 +185,4 @@ class EonEnergySummary extends HTMLElement {
 if(!customElements.get('eon-energy-summary'))customElements.define('eon-energy-summary',EonEnergySummary);
 window.customCards=window.customCards||[];
 window.customCards.push({type:"eon-energy-summary",name:"E.ON energy summary",description:"Stacked energy, selected-period costs and month-to-date totals."});
-export {londonMidnight, dateKey, shiftDay, summarize};
+export {londonMidnight, dateKey, shiftDay, summarize, summarizeChargeHistory};
