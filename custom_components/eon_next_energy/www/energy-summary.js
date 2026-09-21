@@ -58,7 +58,11 @@ function summarizeChargeCostHistory(rows=[], offpeakRate=0, peakRate=0) {
 }
 const sumDays=(days,from,to)=>{let total=0,found=false;for(let d=from;d<=to;d=shiftDay(d,1)){if(days?.has(d)){total+=days.get(d);found=true;}}return found?total:null;};
 class EonEnergySummary extends HTMLElement {
-  setConfig(config) {this._config=config;this._from=monthStart(dateKey(Date.now()));this._to=dateKey(Date.now());this._render();}
+  setConfig(config) {
+    this._config=config;
+    this._manualChargeDays=new Set((config.manual_charge_days||[]).filter(day=>/^\d{4}-\d{2}-\d{2}$/.test(day)));
+    this._from=monthStart(dateKey(Date.now()));this._to=dateKey(Date.now());this._render();
+  }
   getCardSize(){return 11;}
   set hass(hass){
     this._hass=hass;
@@ -132,12 +136,13 @@ class EonEnergySummary extends HTMLElement {
     let svg=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily electricity and estimated gas consumption stacked in kWh">`;
     for(let i=0;i<=4;i++){const y=bottom-plot*i/4;svg+=`<line x1="${left}" x2="880" y1="${y}" y2="${y}" class="grid"/><text x="40" y="${y+4}" text-anchor="end">${number(max*i/4)}</text>`;}
     days.forEach((day,i)=>{
-      const e=totals.electricity.days.get(day),offpeak=totals.electricity.offpeakDays.get(day)||0,peak=totals.electricity.peakDays.get(day)||0,g=totals.gas.days.get(day),ev=this._chargeDays?.get(day)||0,x=left+i*step+step*.15,bw=step*.7,oh=offpeak/max*plot,ph=peak/max*plot,gh=(g||0)/max*plot;
+      const e=totals.electricity.days.get(day),offpeak=totals.electricity.offpeakDays.get(day)||0,peak=totals.electricity.peakDays.get(day)||0,g=totals.gas.days.get(day),ev=this._chargeDays?.get(day)||0,manualEv=this._manualChargeDays?.has(day),x=left+i*step+step*.15,bw=step*.7,oh=offpeak/max*plot,ph=peak/max*plot,gh=(g||0)/max*plot;
       const evCost=this._chargeCostDays?.get(day);
-      const title=`${displayDate(day)} · Off-peak electricity ${number(offpeak)} kWh · Peak electricity ${number(peak)} kWh · Gas ${g===undefined?"no data":number(g)+" kWh (estimated)"}${ev?` · EV charging ${number(ev)} kWh · estimated ${money(evCost)}`:""}`;
+      const evDetail=ev?` · EV charging ${number(ev)} kWh · estimated ${money(evCost)}`:manualEv?" · Confirmed EV charge day · charger data unavailable":"";
+      const title=`${displayDate(day)} · Off-peak electricity ${number(offpeak)} kWh · Peak electricity ${number(peak)} kWh · Gas ${g===undefined?"no data":number(g)+" kWh (estimated)"}${evDetail}`;
       if(e!==undefined){svg+=`<rect x="${x}" y="${bottom-oh}" width="${bw}" height="${oh}" class="electricity-offpeak"><title>${title}</title></rect>`;svg+=`<rect x="${x}" y="${bottom-oh-ph}" width="${bw}" height="${ph}" class="electricity-peak"><title>${title}</title></rect>`;}
       if(g!==undefined)svg+=`<rect x="${x}" y="${bottom-oh-ph-gh}" width="${bw}" height="${gh}" class="gas"><title>${title}</title></rect>`;
-      if(ev)svg+=`<circle cx="${x+bw/2}" cy="${Math.max(7,bottom-oh-ph-gh-7)}" r="4" class="ev-marker"><title>${displayDate(day)} · EV charging ${number(ev)} kWh · estimated ${money(evCost)}</title></circle>`;
+      if(ev||manualEv)svg+=`<circle cx="${x+bw/2}" cy="${Math.max(7,bottom-oh-ph-gh-7)}" r="4" class="ev-marker"><title>${displayDate(day)} · ${ev?`EV charging ${number(ev)} kWh · estimated ${money(evCost)}`:"Confirmed EV charge day · charger data unavailable"}</title></circle>`;
       if(e===undefined&&g===undefined)svg+=`<circle cx="${x+bw/2}" cy="${bottom-3}" r="2" class="missing"><title>${title}</title></circle>`;
       if(i%Math.max(1,Math.ceil(days.length/12))===0||i===days.length-1)svg+=`<text x="${x+bw/2}" y="242" text-anchor="middle">${day.slice(8)}/${day.slice(5,7)}</text>`;
     });

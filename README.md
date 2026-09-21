@@ -85,11 +85,14 @@ cost totals against the E.ON Next portal before relying on the statistics.
 
 ## Energy summary card
 
-Add `/eon-next-energy/energy-summary.js?v=0.3.0` as a JavaScript module resource
+Add `/eon-next-energy/energy-summary.js?v=0.3.2` as a JavaScript module resource
 in dashboard resources, then add a manual card:
 
 ```yaml
 type: custom:eon-energy-summary
+manual_charge_days:
+  - "2026-09-11"
+  - "2026-09-12"
 ```
 
 The card discovers redacted statistic IDs from the integration's freshness
@@ -105,3 +108,5 @@ and is never added to the combined total. A live-home section shows Nest
 temperature, target, humidity and heating state alongside Hypervolt connection,
 charging readiness, power and current-session energy. Data is read through Home
 Assistant's authenticated connection; no data is sent to any third party.
+`manual_charge_days` can mark known sessions from before Hypervolt history was
+recorded. These dates show a marker without inventing charging energy or cost.
