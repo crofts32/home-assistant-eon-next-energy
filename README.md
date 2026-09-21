@@ -94,7 +94,8 @@ type: custom:eon-energy-summary
 
 The card discovers redacted statistic IDs from the integration's freshness
 entities. It shows a daily stacked chart with peak and off-peak electricity,
-estimated gas, and EV-charge-day markers, plus selected-period consumption and
+estimated gas, and EV-charge-day markers, plus selected-period consumption, an
+estimated Hypervolt charging cost using the configured time-of-use rates, and
 total cost and independent month-to-date metrics. Dates use
 Europe/London including DST. Costs include the standing charges already written
 by the importer. Gas conversion must be enabled for combined totals; missing

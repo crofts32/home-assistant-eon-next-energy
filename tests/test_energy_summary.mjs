@@ -3,7 +3,7 @@ import {pathToFileURL} from 'node:url';
 globalThis.HTMLElement=class {};
 globalThis.customElements={get:()=>undefined,define:()=>{}};
 globalThis.window={};
-const {londonMidnight,dateKey,shiftDay,summarize,summarizeChargeHistory}=await import(pathToFileURL(process.cwd()+'/custom_components/eon_next_energy/www/energy-summary.js'));
+const {londonMidnight,dateKey,shiftDay,summarize,summarizeChargeHistory,summarizeChargeCostHistory}=await import(pathToFileURL(process.cwd()+'/custom_components/eon_next_energy/www/energy-summary.js'));
 assert.equal(londonMidnight('2026-09-01'),Date.parse('2026-08-31T23:00:00Z'));
 assert.equal(londonMidnight('2026-01-01'),Date.parse('2026-01-01T00:00:00Z'));
 assert.equal(londonMidnight('2026-03-30')-londonMidnight('2026-03-29'),23*3600000);
@@ -27,4 +27,11 @@ const charge=summarizeChargeHistory([
   {s:'unknown',lu:at('2026-09-21T03:00:00Z')},
 ]);
 assert.equal(charge.get('2026-09-21'),5);
+const chargeCost=summarizeChargeCostHistory([
+  {s:'0',lu:at('2026-09-21T00:05:00Z')},
+  {s:'1000',lu:at('2026-09-21T00:15:00Z')},
+  {s:'3000',lu:at('2026-09-21T05:30:00Z')},
+  {s:'4000',lu:at('2026-09-21T06:30:00Z')},
+],0.069,0.3367);
+assert.ok(Math.abs(chargeCost.get('2026-09-21')-(3*0.069+1*0.3367))<1e-9);
 console.log('Energy summary: London boundaries, DST, month boundaries, and missing-data checks passed.');

@@ -12,7 +12,15 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE
+from .const import (
+    CONF_ELECTRICITY_OFFPEAK_RATE,
+    CONF_ELECTRICITY_PEAK_RATE,
+    CONF_GAS_CALORIFIC_VALUE,
+    DEFAULT_ELECTRICITY_OFFPEAK_RATE,
+    DEFAULT_ELECTRICITY_PEAK_RATE,
+    DEFAULT_GAS_CALORIFIC_VALUE,
+    DOMAIN,
+)
 from .coordinator import EonCoordinatorData, EonNextCoordinator
 
 
@@ -67,6 +75,12 @@ class EonDataFreshnessSensor(CoordinatorEntity[EonNextCoordinator], SensorEntity
         meters = [item for item in self.coordinator.data.meters if item.fuel == self._fuel]
         return {
             "gas_calorific_value": self.coordinator._setting(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE),
+            "electricity_offpeak_rate": self.coordinator._setting(
+                CONF_ELECTRICITY_OFFPEAK_RATE, DEFAULT_ELECTRICITY_OFFPEAK_RATE
+            ),
+            "electricity_peak_rate": self.coordinator._setting(
+                CONF_ELECTRICITY_PEAK_RATE, DEFAULT_ELECTRICITY_PEAK_RATE
+            ),
             "meter_count": len(meters),
             "hours_imported_last_update": sum(item.imported_hours for item in meters),
             "consumption_statistics": ", ".join(

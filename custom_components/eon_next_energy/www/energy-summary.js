@@ -46,6 +46,17 @@ function summarizeChargeHistory(rows=[]) {
   }
   return days;
 }
+function summarizeChargeCostHistory(rows=[], offpeakRate=0, peakRate=0) {
+  const days=new Map();let previous=null;
+  for(const row of rows) {
+    const value=Number(row.s);if(!Number.isFinite(value))continue;
+    const increment=previous===null?0:value>=previous?value-previous:value;
+    if(increment>0){const time=row.lu*1000,key=dateKey(time),rate=londonHour(time)<7?offpeakRate:peakRate;days.set(key,(days.get(key)||0)+increment/1000*rate);}
+    previous=value;
+  }
+  return days;
+}
+const sumDays=(days,from,to)=>{let total=0,found=false;for(let d=from;d<=to;d=shiftDay(d,1)){if(days?.has(d)){total+=days.get(d);found=true;}}return found?total:null;};
 class EonEnergySummary extends HTMLElement {
   setConfig(config) {this._config=config;this._from=monthStart(dateKey(Date.now()));this._to=dateKey(Date.now());this._render();}
   getCardSize(){return 11;}
@@ -73,7 +84,7 @@ class EonEnergySummary extends HTMLElement {
         const gas=consumption.some(id=>id.startsWith("eon_next_energy:gas_"));
         ids[gas?"gas":"electricity"].push(...consumption.filter(id=>!id.endsWith("_volume")));
         ids[gas?"gasCost":"electricityCost"].push(...costs);
-        freshness.push({gas,time:state.state,cv:attr.gas_calorific_value});
+        freshness.push({gas,time:state.state,cv:attr.gas_calorific_value,offpeakRate:Number(attr.electricity_offpeak_rate),peakRate:Number(attr.electricity_peak_rate)});
       }
       this._ids=ids;this._freshness=freshness;
       const all=[...new Set(Object.values(ids).flat())];
@@ -83,11 +94,14 @@ class EonEnergySummary extends HTMLElement {
       const last=this._to>now?this._to:now;
       this._data=await this._hass.callWS({type:"recorder/statistics_during_period",start_time:new Date(londonMidnight(first)).toISOString(),end_time:new Date(londonMidnight(shiftDay(last,1))).toISOString(),statistic_ids:all,period:"hour",types:["state"]});
       this._chargeDays=new Map();
+      this._chargeCostDays=new Map();
       const session=this._state("sensor","hypervolt session energy","sensor.hypervolt_216454544628214346_hypervolt_session_energy");
       if(session){
         try{
           const history=await this._hass.callWS({type:"history/history_during_period",start_time:new Date(londonMidnight(first)).toISOString(),end_time:new Date(londonMidnight(shiftDay(last,1))).toISOString(),entity_ids:[session.entity_id],minimal_response:true,no_attributes:true,significant_changes_only:false});
           this._chargeDays=summarizeChargeHistory(history[session.entity_id]);
+          const tariff=freshness.find(item=>Number.isFinite(item.offpeakRate)&&Number.isFinite(item.peakRate));
+          if(tariff)this._chargeCostDays=summarizeChargeCostHistory(history[session.entity_id],tariff.offpeakRate,tariff.peakRate);
         }catch(_error){/* Energy data remains usable if recorder history is unavailable. */}
       }
       this._loaded={from:this._from,to:this._to};
@@ -119,10 +133,11 @@ class EonEnergySummary extends HTMLElement {
     for(let i=0;i<=4;i++){const y=bottom-plot*i/4;svg+=`<line x1="${left}" x2="880" y1="${y}" y2="${y}" class="grid"/><text x="40" y="${y+4}" text-anchor="end">${number(max*i/4)}</text>`;}
     days.forEach((day,i)=>{
       const e=totals.electricity.days.get(day),offpeak=totals.electricity.offpeakDays.get(day)||0,peak=totals.electricity.peakDays.get(day)||0,g=totals.gas.days.get(day),ev=this._chargeDays?.get(day)||0,x=left+i*step+step*.15,bw=step*.7,oh=offpeak/max*plot,ph=peak/max*plot,gh=(g||0)/max*plot;
-      const title=`${displayDate(day)} · Off-peak electricity ${number(offpeak)} kWh · Peak electricity ${number(peak)} kWh · Gas ${g===undefined?"no data":number(g)+" kWh (estimated)"}${ev?` · EV charging ${number(ev)} kWh`:""}`;
+      const evCost=this._chargeCostDays?.get(day);
+      const title=`${displayDate(day)} · Off-peak electricity ${number(offpeak)} kWh · Peak electricity ${number(peak)} kWh · Gas ${g===undefined?"no data":number(g)+" kWh (estimated)"}${ev?` · EV charging ${number(ev)} kWh · estimated ${money(evCost)}`:""}`;
       if(e!==undefined){svg+=`<rect x="${x}" y="${bottom-oh}" width="${bw}" height="${oh}" class="electricity-offpeak"><title>${title}</title></rect>`;svg+=`<rect x="${x}" y="${bottom-oh-ph}" width="${bw}" height="${ph}" class="electricity-peak"><title>${title}</title></rect>`;}
       if(g!==undefined)svg+=`<rect x="${x}" y="${bottom-oh-ph-gh}" width="${bw}" height="${gh}" class="gas"><title>${title}</title></rect>`;
-      if(ev)svg+=`<circle cx="${x+bw/2}" cy="${Math.max(7,bottom-oh-ph-gh-7)}" r="4" class="ev-marker"><title>${displayDate(day)} · EV charging ${number(ev)} kWh</title></circle>`;
+      if(ev)svg+=`<circle cx="${x+bw/2}" cy="${Math.max(7,bottom-oh-ph-gh-7)}" r="4" class="ev-marker"><title>${displayDate(day)} · EV charging ${number(ev)} kWh · estimated ${money(evCost)}</title></circle>`;
       if(e===undefined&&g===undefined)svg+=`<circle cx="${x+bw/2}" cy="${bottom-3}" r="2" class="missing"><title>${title}</title></circle>`;
       if(i%Math.max(1,Math.ceil(days.length/12))===0||i===days.length-1)svg+=`<text x="${x+bw/2}" y="242" text-anchor="middle">${day.slice(8)}/${day.slice(5,7)}</text>`;
     });
@@ -134,6 +149,8 @@ class EonEnergySummary extends HTMLElement {
     const ready=this._data&&this._ids&&this._loaded?.from===this._from&&this._loaded?.to===this._to;
     const totals=ready?this._totals(this._from,this._to):null;
     const now=dateKey(Date.now()),mtd=ready?this._totals(monthStart(now),now):null;
+    const selectedEv=ready?{energy:sumDays(this._chargeDays,this._from,this._to),cost:sumDays(this._chargeCostDays,this._from,this._to)}:null;
+    const monthEv=ready?{energy:sumDays(this._chargeDays,monthStart(now),now),cost:sumDays(this._chargeCostDays,monthStart(now),now)}:null;
     const combined=(t)=>t.electricityCost.sum!==null&&t.gasCost.sum!==null?t.electricityCost.sum+t.gasCost.sum:null;
     const cv=this._freshness?.find(f=>f.gas)?.cv;
     const live=this._live();
@@ -155,11 +172,12 @@ class EonEnergySummary extends HTMLElement {
     ${this._chart(totals)}
     <h2>Totals · selected dates</h2><table><thead><tr><th>Source</th><th>Consumption</th><th>Cost</th></tr></thead><tbody>
     <tr><td>Electricity</td><td>${number(totals.electricity.sum)} kWh</td><td>${money(totals.electricityCost.sum)}</td></tr>
-    <tr><td>Gas · estimated</td><td>${number(totals.gas.sum)} kWh</td><td>${money(totals.gasCost.sum)}</td></tr></tbody>
+    <tr><td>Gas · estimated</td><td>${number(totals.gas.sum)} kWh</td><td>${money(totals.gasCost.sum)}</td></tr>
+    <tr><td>EV charging · included in electricity</td><td>${number(selectedEv.energy)} kWh</td><td>${money(selectedEv.cost)} estimated</td></tr></tbody>
     <tfoot><tr><td>Total · estimated</td><td>${number(totals.electricity.sum!==null&&totals.gas.sum!==null?totals.electricity.sum+totals.gas.sum:null)} kWh</td><td>${money(combined(totals))}</td></tr></tfoot></table>
     <h2>Month so far · ${new Intl.DateTimeFormat("en-GB",{month:"long",year:"numeric",timeZone:TZ}).format(new Date())}</h2>
     <div class="muted">${displayDate(monthStart(now))} – ${displayDate(now)} · independent of selected dates</div>
-    <div class="cards"><div class="metric"><span>Electricity</span><strong>${money(mtd.electricityCost.sum)}</strong><span class="muted">${number(mtd.electricity.sum)} kWh</span></div><div class="metric"><span>Gas · estimated</span><strong>${money(mtd.gasCost.sum)}</strong><span class="muted">${number(mtd.gas.sum)} kWh</span></div><div class="metric"><span>Total · estimated</span><strong>${money(combined(mtd))}</strong><span class="muted">Includes recorded standing charges</span></div></div>
+    <div class="cards"><div class="metric"><span>Electricity</span><strong>${money(mtd.electricityCost.sum)}</strong><span class="muted">${number(mtd.electricity.sum)} kWh</span></div><div class="metric"><span>Gas · estimated</span><strong>${money(mtd.gasCost.sum)}</strong><span class="muted">${number(mtd.gas.sum)} kWh</span></div><div class="metric"><span>EV charging · estimated</span><strong>${money(monthEv.cost)}</strong><span class="muted">${number(monthEv.energy)} kWh · included in electricity</span></div><div class="metric"><span>Total · estimated</span><strong>${money(combined(mtd))}</strong><span class="muted">Includes recorded standing charges</span></div></div>
     <div class="muted">Recorded hours this month: electricity ${mtd.electricity.hours}; gas ${mtd.gas.hours}. Delayed or missing readings make totals partial. A dash means no data, not zero.</div>`}
     <h2>Live home</h2><div class="cards live-cards">
       <div class="metric"><span>Nest · Kitchen</span><strong>${currentTemperature==null?"—":escapeText(currentTemperature)+" °C"}</strong><span class="muted">Target ${targetTemperature==null?"—":escapeText(targetTemperature)+" °C"} · ${heatingState?escapeText(String(heatingState).replace(/^./,c=>c.toUpperCase())):"—"} · Humidity ${humidity==null?"—":escapeText(humidity)+"%"}</span></div>
@@ -185,4 +203,4 @@ class EonEnergySummary extends HTMLElement {
 if(!customElements.get('eon-energy-summary'))customElements.define('eon-energy-summary',EonEnergySummary);
 window.customCards=window.customCards||[];
 window.customCards.push({type:"eon-energy-summary",name:"E.ON energy summary",description:"Stacked energy, selected-period costs and month-to-date totals."});
-export {londonMidnight, dateKey, shiftDay, summarize, summarizeChargeHistory};
+export {londonMidnight, dateKey, shiftDay, summarize, summarizeChargeHistory, summarizeChargeCostHistory};
