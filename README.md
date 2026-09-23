@@ -85,7 +85,7 @@ cost totals against the E.ON Next portal before relying on the statistics.
 
 ## Energy summary card
 
-Add `/eon-next-energy/energy-summary.js?v=0.3.3` as a JavaScript module resource
+Add `/eon-next-energy/energy-summary.js?v=0.3.4` as a JavaScript module resource
 in dashboard resources, then add a manual card:
 
 ```yaml

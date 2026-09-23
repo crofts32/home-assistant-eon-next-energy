@@ -3,7 +3,7 @@ import {pathToFileURL} from 'node:url';
 globalThis.HTMLElement=class {};
 globalThis.customElements={get:()=>undefined,define:()=>{}};
 globalThis.window={};
-const {londonMidnight,dateKey,shiftDay,summarize,summarizeChargeHistory,summarizeChargeCostHistory,normalizeHistoricalCharges}=await import(pathToFileURL(process.cwd()+'/custom_components/eon_next_energy/www/energy-summary.js'));
+const {londonMidnight,dateKey,shiftDay,summarize,summarizeChargeHistory,summarizeChargeCostHistory,normalizeHistoricalCharges,sumValues,share}=await import(pathToFileURL(process.cwd()+'/custom_components/eon_next_energy/www/energy-summary.js'));
 assert.equal(londonMidnight('2026-09-01'),Date.parse('2026-08-31T23:00:00Z'));
 assert.equal(londonMidnight('2026-01-01'),Date.parse('2026-01-01T00:00:00Z'));
 assert.equal(londonMidnight('2026-03-30')-londonMidnight('2026-03-29'),23*3600000);
@@ -17,6 +17,9 @@ assert.equal(summarize(rows,['energy'],'2026-09-01','2026-09-01').offpeakDays.ge
 assert.equal(summarize(rows,['energy'],'2026-09-01','2026-09-01').peakDays.get('2026-09-01'),undefined);
 assert.equal(summarize(rows,['missing'],'2026-09-01','2026-09-01').sum,null);
 assert.equal(summarize(rows,['energy'],'2026-09-02','2026-09-02').sum,null);
+assert.equal(sumValues(new Map([['one',2],['two',3.5]]).values()),5.5);
+assert.equal(share(100.92,186.46),100.92/186.46*100);
+assert.equal(share(0,0),null);
 const at=(iso)=>Date.parse(iso)/1000;
 const charge=summarizeChargeHistory([
   {s:'0',lu:at('2026-09-21T00:05:00Z')},
