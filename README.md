@@ -85,7 +85,7 @@ cost totals against the E.ON Next portal before relying on the statistics.
 
 ## Energy summary card
 
-Add `/eon-next-energy/energy-summary.js?v=0.3.2` as a JavaScript module resource
+Add `/eon-next-energy/energy-summary.js?v=0.3.3` as a JavaScript module resource
 in dashboard resources, then add a manual card:
 
 ```yaml
@@ -93,6 +93,10 @@ type: custom:eon-energy-summary
 manual_charge_days:
   - "2026-09-11"
   - "2026-09-12"
+historical_charges:
+  - date: "2026-09-11"
+    energy_kwh: 15
+    rate: offpeak
 ```
 
 The card discovers redacted statistic IDs from the integration's freshness
@@ -110,3 +114,6 @@ charging readiness, power and current-session energy. Data is read through Home
 Assistant's authenticated connection; no data is sent to any third party.
 `manual_charge_days` can mark known sessions from before Hypervolt history was
 recorded. These dates show a marker without inventing charging energy or cost.
+`historical_charges` adds measured Tesla energy from before Hypervolt was
+connected and estimates its cost from the configured peak or off-peak rate.
+Recorded Hypervolt data takes precedence if both sources cover the same date.
