@@ -21,7 +21,9 @@ import getpass
 import json
 import subprocess
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API_URL = "https://api.eonnext-kraken.energy/v1/graphql/"
@@ -60,17 +62,42 @@ def graphql(token: str, operation: str, query: str) -> dict:
     return body.get("data") or {}
 
 
-def _issuer(token: str) -> str:
+def _claims(token: str) -> dict:
     try:
         payload = token.split(".")[1]
         claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
     except (IndexError, ValueError):
-        return ""
-    return str(claims.get("iss", "")) if isinstance(claims, dict) else ""
+        return {}
+    return claims if isinstance(claims, dict) else {}
+
+
+def _issuer(token: str) -> str:
+    return str(_claims(token).get("iss", ""))
+
+
+def describe_token(header: str) -> str:
+    """Summarise a token without revealing it or any personal claim."""
+    scheme, _, token = header.partition(" ")
+    claims = _claims(token)
+    parts = [f"scheme={scheme}", f"length={len(token)}", f"segments={token.count('.') + 1}"]
+    if not claims:
+        parts.append("payload=unreadable (not a JWT?)")
+        return ", ".join(parts)
+    issuer = urllib.parse.urlsplit(str(claims.get("iss", ""))).netloc or "missing"
+    parts.append(f"issuer={issuer}")
+    exp = claims.get("exp")
+    if isinstance(exp, (int, float)):
+        minutes = int((exp - time.time()) // 60)
+        parts.append(f"expired {-minutes} min ago" if minutes < 0 else f"expires in {minutes} min")
+    for claim in ("token_use", "typ", "scope"):
+        if isinstance(claims.get(claim), str):
+            parts.append(f"{claim}={claims[claim][:40]}")
+    parts.append(f"audience={'present' if claims.get('aud') else 'missing'}")
+    return ", ".join(parts)
 
 
 def normalise_token(value: str) -> str:
-    value = value.strip().strip('"').strip()
+    value = value.strip().strip("'\"").strip()
     if value.lower().startswith("authorization:"):
         value = value.split(":", 1)[1].strip()
     scheme, _, rest = value.partition(" ")
@@ -147,6 +174,7 @@ def main() -> int:
             key = (graphql(token, "RegenerateKey", REGENERATE_KEY).get("regenerateSecretKey") or {}).get("key")
     except (RuntimeError, urllib.error.URLError) as err:
         print(f"Failed: {err}", file=sys.stderr)
+        print(f"Token sent: {describe_token(token)}", file=sys.stderr)
         return 1
     if not key:
         print("No API key exists for this account; rerun with --regenerate.", file=sys.stderr)

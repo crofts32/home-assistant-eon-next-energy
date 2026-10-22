@@ -59,11 +59,14 @@ signed-in browser session:
 
 1. Sign in at <https://www.eonnext.com>.
 2. Open the browser developer tools and copy a token, either way works:
-   - **Console:** run the snippet below and copy the value it prints.
+   - **Console:** run the snippet below. It copies the token to the
+     clipboard and prints how long it is (0 means no token was found).
      ```js
-     Object.keys(localStorage).filter(k => k.startsWith("@@auth0spajs@@"))
-       .map(k => JSON.parse(localStorage.getItem(k)))
-       .map(v => v?.body?.id_token || v?.id_token).find(Boolean)
+     (t => { copy(t); return `copied ${t.length} characters`; })(
+       Object.keys(localStorage).filter(k => k.startsWith("@@auth0spajs@@"))
+         .map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
+         .map(v => v?.id_token || v?.decodedToken?.raw || v?.body?.id_token || v?.body?.decodedToken?.raw)
+         .find(t => typeof t === "string" && t.length) || "")
      ```
    - **Network:** reload, pick any request to `api.eonnext-kraken.energy` and
      copy the value of its `Authorization` request header.
