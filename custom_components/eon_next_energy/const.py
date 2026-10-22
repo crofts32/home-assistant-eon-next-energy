@@ -4,8 +4,8 @@ from datetime import timedelta
 
 DOMAIN = "eon_next_energy"
 
-CONF_EMAIL = "email"
-CONF_REFRESH_TOKEN = "refresh_token"
+CONF_API_KEY = "api_key"
+LEGACY_CONF_KEYS = ("email", "refresh_token")
 CONF_HISTORY_DAYS = "history_days"
 CONF_ELECTRICITY_OFFPEAK_RATE = "electricity_offpeak_rate"
 CONF_ELECTRICITY_PEAK_RATE = "electricity_peak_rate"

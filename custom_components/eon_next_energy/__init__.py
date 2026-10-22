@@ -15,7 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EonConfigEntry) -> bool:
     """Set up E.ON Next Energy Data from a config entry."""
     if not hass.data.get("eon_next_energy_static_registered"):
         await hass.http.async_register_static_paths([
-            StaticPathConfig("/eon-next-energy", str(Path(__file__).parent / "www"), False)
+            StaticPathConfig("/eon-next-energy", str(Path(__file__).parent / "www"), True)
         ])
         hass.data["eon_next_energy_static_registered"] = True
     coordinator = EonNextCoordinator(hass, entry)

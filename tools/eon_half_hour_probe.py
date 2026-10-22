@@ -172,10 +172,9 @@ def report(fuel: str, ordinal: int, records: list[dict], dates: list):
 
 async def main() -> int:
     print("E.ON half-hour data probe (read-only; nothing is saved)")
-    username = input("E.ON Next email: ").strip()
-    password = getpass.getpass("E.ON Next password: ")
-    if not username or not password:
-        print("Email and password are required.")
+    api_key = getpass.getpass("E.ON Next API key: ").strip()
+    if not api_key:
+        print("An API key is required; see tools/eon_api_key.py.")
         return 2
 
     today = datetime.now(LONDON).date()
@@ -189,10 +188,10 @@ async def main() -> int:
                 client,
                 "Login",
                 LOGIN,
-                {"input": {"email": username, "password": password}},
+                {"input": {"APIKey": api_key}},
             )
             token = (auth.get("obtainKrakenToken") or {}).get("token")
-            password = ""
+            api_key = ""
             if not token:
                 raise RuntimeError("Authentication did not return a token")
 
@@ -249,7 +248,7 @@ async def main() -> int:
         print("\nProbe failed: E.ON returned an unexpected response.")
         return 2
     finally:
-        password = ""
+        api_key = ""
 
 
 if __name__ == "__main__":

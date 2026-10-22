@@ -4,10 +4,9 @@
     "step": {
       "user": {
         "title": "Connect to E.ON Next",
-        "description": "Your password is exchanged for a refresh token and is not stored. This integration is read-only.",
+        "description": "E.ON Next no longer accepts email and password for API access. Enter your account API key (starts with sk_live_); see the README for how to get it from a signed-in browser session. The key is stored in Home Assistant and used only for read-only data requests.",
         "data": {
-          "email": "E.ON Next email",
-          "password": "E.ON Next password"
+          "api_key": "E.ON Next API key"
         }
       },
       "tariff": {
@@ -25,15 +24,15 @@
       },
       "reauth_confirm": {
         "title": "Reconnect E.ON Next",
-        "description": "Enter the current E.ON Next password. It will be exchanged for a refresh token and discarded.",
+        "description": "E.ON Next rejected the stored credentials, or this entry still uses the retired password login. Enter the account API key (starts with sk_live_).",
         "data": {
-          "password": "E.ON Next password"
+          "api_key": "E.ON Next API key"
         }
       }
     },
     "error": {
       "cannot_connect": "Could not connect to E.ON Next",
-      "invalid_auth": "E.ON Next rejected the credentials",
+      "invalid_auth": "E.ON Next rejected the API key, or API access is not enabled for this account",
       "login_response": "E.ON Next rejected the login request with an unrecognized response",
       "meter_discovery": "Login succeeded, but E.ON Next rejected the account or meter query",
       "no_meters": "Login succeeded, but E.ON Next returned no active meters",
@@ -42,7 +41,8 @@
     },
     "abort": {
       "already_configured": "E.ON Next Energy Data is already configured",
-      "reauth_successful": "E.ON Next was reconnected"
+      "reauth_successful": "E.ON Next was reconnected",
+      "wrong_account": "The API key belongs to a different E.ON Next account"
     }
   },
   "options": {

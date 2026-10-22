@@ -36,14 +36,38 @@ The initial import defaults to 30 days. Tariff changes recalculate the latest
 
 ## Security model
 
-The config flow sends the supplied email and password directly to E.ON's Kraken
-GraphQL endpoint. It stores only the returned refresh token and discards the
-password. Subsequent updates use the refresh token. If E.ON invalidates it,
-Home Assistant starts a reauthentication flow.
+E.ON Next retired email/password login for its Kraken API in October 2026;
+sign-in now goes through a verification-code flow that third-party clients
+cannot use. The integration therefore authenticates with the account's API key
+(`sk_live_…`). The key is stored in the Home Assistant config entry and
+exchanged for a short-lived access token on every update. Anyone who can read
+Home Assistant's `.storage` directory or backups can read the key, so protect
+them accordingly. If E.ON rejects the key, Home Assistant starts a
+reauthentication flow asking for a new one. Entries created with the old
+password login are moved onto the API key the same way.
 
 The client contains no account-balance, statement, payment, meter-reading
 submission, tariff switching, EV control or other mutation code. The only
-GraphQL mutation is the token exchange required for authentication.
+GraphQL mutation is the token exchange required for authentication. E.ON's
+API error codes are logged when a request fails; error messages, which can
+echo request variables, are not.
+
+## Getting the API key
+
+E.ON Next's website does not show the API key, but it can be read with a
+signed-in browser session:
+
+1. Sign in at <https://www.eonnext.com>.
+2. Open the browser developer tools, select the **Network** tab and reload.
+3. Pick any request to `api.eonnext-kraken.energy` and copy the value of its
+   `Authorization` request header.
+4. Run `python3 tools/eon_api_key.py` and paste the header when prompted. It
+   prints the key. If the account has none yet, rerun with `--regenerate`.
+   `--regenerate --force` replaces an existing key and breaks any other client
+   using the old one.
+
+The browser token expires within an hour; the API key does not. Treat the key
+like a password.
 
 Meter units are read from E.ON. Electricity must be `kWh`; gas can be `kWh`,
 `m3`, or `m³`. Gas volume is imported as native cubic metres using a separate
@@ -73,8 +97,7 @@ history window before allowing it to write long-term statistics.
 3. Install **E.ON Next Energy Data** and restart Home Assistant.
 4. Open **Settings → Devices & services → Add integration**, then select
    **E.ON Next Energy Data**.
-5. Enter the current E.ON Next email and password. The password is exchanged
-   for a refresh token and is not stored.
+5. Enter the E.ON Next API key (see [Getting the API key](#getting-the-api-key)).
 
 After the first import, select the external consumption and cost statistics in
 the Energy dashboard. The integration's diagnostic entities list the redacted

@@ -44,7 +44,7 @@ from .const import (
     CONF_GAS_RATE,
     CONF_GAS_STANDING_CHARGE,
     CONF_HISTORY_DAYS,
-    CONF_REFRESH_TOKEN,
+    CONF_API_KEY,
     CORRECTION_LOOKBACK_DAYS,
     DEFAULT_ELECTRICITY_OFFPEAK_RATE,
     DEFAULT_ELECTRICITY_PEAK_RATE,
@@ -110,7 +110,7 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             update_interval=UPDATE_INTERVAL,
         )
         self.client = EonNextClient(
-            async_get_clientsession(hass), entry.data[CONF_REFRESH_TOKEN]
+            async_get_clientsession(hass), entry.data.get(CONF_API_KEY, "")
         )
 
     def _setting(self, key: str, default: float | int) -> float | int:
@@ -273,15 +273,7 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
 
     async def _async_update_data(self) -> EonCoordinatorData:
         try:
-            tokens = await self.client.async_refresh_access_token()
-            if tokens.refresh_token != self.config_entry.data[CONF_REFRESH_TOKEN]:
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data={
-                        **self.config_entry.data,
-                        CONF_REFRESH_TOKEN: tokens.refresh_token,
-                    },
-                )
+            await self.client.async_authenticate()
             meters = await self.client.async_get_meters()
             if not meters:
                 raise EonNextApiError("No active meters were returned")

@@ -11,7 +11,6 @@ from typing import Any
 
 from aiohttp import (
     ClientError,
-    ClientResponseError,
     ClientSession,
     ClientTimeout,
     ContentTypeError,
@@ -27,7 +26,7 @@ class EonNextError(Exception):
 
 
 class EonNextAuthenticationError(EonNextError):
-    """Authentication or token refresh failed."""
+    """Authentication failed or the API key was rejected."""
 
 
 class EonNextConnectionError(EonNextError):
@@ -36,16 +35,6 @@ class EonNextConnectionError(EonNextError):
 
 class EonNextApiError(EonNextError):
     """The API returned an unexpected response."""
-
-
-@dataclass(frozen=True, slots=True)
-class EonTokens:
-    """Short-lived access token and rotating refresh token."""
-
-    access_token: str
-    refresh_token: str
-    access_expires_at: int | None
-    refresh_expires_at: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,9 +59,6 @@ class EonInterval:
 LOGIN_MUTATION = """
 mutation Login($input: ObtainJSONWebTokenInput!) {
   obtainKrakenToken(input: $input) {
-    payload
-    refreshExpiresIn
-    refreshToken
     token
   }
 }
@@ -80,7 +66,7 @@ mutation Login($input: ObtainJSONWebTokenInput!) {
 
 ACCOUNTS_QUERY = """
 query Accounts {
-  viewer { accounts { ... on AccountType { number } } }
+  viewer { email accounts { ... on AccountType { number } } }
 }
 """
 
@@ -134,6 +120,8 @@ _AUTH_ERROR_CODES = {
     "KT-CT-1134",  # Invalid authentication input.
     "KT-CT-1135",  # Invalid authentication input.
     "KT-CT-1138",  # Credentials rejected.
+    "KT-CT-1139",  # API key rejected.
+    "KT-CT-11334",  # Account user API access is not enabled.
 }
 
 
@@ -165,15 +153,11 @@ def _parse_datetime(value: str) -> datetime:
 class EonNextClient:
     """Read-only E.ON client. It intentionally exposes no mutation except login."""
 
-    def __init__(self, session: ClientSession, refresh_token: str | None = None) -> None:
+    def __init__(self, session: ClientSession, api_key: str) -> None:
         self._session = session
-        self._refresh_token = refresh_token
+        self._api_key = api_key
         self._access_token: str | None = None
-
-    @property
-    def refresh_token(self) -> str | None:
-        """Return the most recently issued refresh token."""
-        return self._refresh_token
+        self.viewer_email: str | None = None
 
     async def _request(
         self,
@@ -201,26 +185,34 @@ class EonNextClient:
                 headers=headers,
                 timeout=ClientTimeout(total=30),
             ) as response:
-                response.raise_for_status()
-                body = await response.json()
-        except ContentTypeError as err:
-            raise EonNextApiError("E.ON returned an invalid response") from err
-        except ClientResponseError as err:
-            if err.status in (401, 403):
-                raise EonNextAuthenticationError("E.ON authentication failed") from err
-            if err.status == 429 or 500 <= err.status < 600:
-                raise EonNextConnectionError("E.ON is temporarily unavailable") from err
-            raise EonNextApiError(f"E.ON returned HTTP {err.status}") from err
+                status = response.status
+                try:
+                    body = await response.json()
+                except (ContentTypeError, TypeError, ValueError):
+                    body = None
         except (ClientError, TimeoutError) as err:
             raise EonNextConnectionError("Could not connect to E.ON") from err
-        except (TypeError, ValueError) as err:
-            raise EonNextApiError("E.ON returned an invalid response") from err
+
+        errors = body.get("errors") if isinstance(body, dict) else None
+        error_codes = _graphql_error_codes(errors)
+        if status >= 400:
+            _LOGGER.warning(
+                "E.ON GraphQL operation %s returned HTTP %s with error codes: %s",
+                operation,
+                status,
+                ", ".join(sorted(error_codes)) or "unclassified",
+            )
+            if authentication_request and (
+                status in (401, 403) or (error_codes & _AUTH_ERROR_CODES)
+            ):
+                raise EonNextAuthenticationError("E.ON authentication failed")
+            if status == 429 or 500 <= status < 600:
+                raise EonNextConnectionError("E.ON is temporarily unavailable")
+            raise EonNextApiError(f"E.ON returned HTTP {status}")
 
         if not isinstance(body, dict):
             raise EonNextApiError("E.ON returned an invalid response")
-        errors = body.get("errors")
         if errors:
-            error_codes = _graphql_error_codes(errors)
             if authentication_request and (error_codes & _AUTH_ERROR_CODES):
                 raise EonNextAuthenticationError("E.ON authentication failed")
             _LOGGER.warning(
@@ -234,40 +226,21 @@ class EonNextClient:
             raise EonNextApiError("E.ON returned no data")
         return data
 
-    async def async_login(self, email: str, password: str) -> EonTokens:
-        """Exchange credentials for tokens. The caller must discard the password."""
-        return await self._async_obtain_token({"email": email, "password": password})
-
-    async def async_refresh_access_token(self) -> EonTokens:
-        """Use the stored refresh token to obtain a new access token."""
-        if not self._refresh_token:
-            raise EonNextAuthenticationError("No E.ON refresh token is available")
-        return await self._async_obtain_token({"refreshToken": self._refresh_token})
-
-    async def _async_obtain_token(self, token_input: dict[str, str]) -> EonTokens:
+    async def async_authenticate(self) -> None:
+        """Exchange the account API key for a short-lived access token."""
+        if not self._api_key:
+            raise EonNextAuthenticationError("No E.ON API key is available")
         data = await self._request(
             "Login",
             LOGIN_MUTATION,
-            {"input": token_input},
+            {"input": {"APIKey": self._api_key}},
             authenticated=False,
             authentication_request=True,
         )
         result = data.get("obtainKrakenToken")
         if not isinstance(result, dict) or not result.get("token"):
             raise EonNextAuthenticationError("E.ON did not issue an access token")
-        refresh_token = result.get("refreshToken") or self._refresh_token
-        if not refresh_token:
-            raise EonNextAuthenticationError("E.ON did not issue a refresh token")
-        payload = result.get("payload") or {}
-        tokens = EonTokens(
-            access_token=result["token"],
-            refresh_token=refresh_token,
-            access_expires_at=payload.get("exp") if isinstance(payload, dict) else None,
-            refresh_expires_at=result.get("refreshExpiresIn"),
-        )
-        self._access_token = tokens.access_token
-        self._refresh_token = tokens.refresh_token
-        return tokens
+        self._access_token = result["token"]
 
     async def async_get_meters(self) -> list[EonMeter]:
         """Discover active electricity and gas meters without retaining identifiers."""
@@ -275,6 +248,8 @@ class EonNextClient:
         viewer = accounts_data.get("viewer") or {}
         if not isinstance(viewer, dict):
             raise EonNextApiError("E.ON returned invalid account data")
+        email = viewer.get("email")
+        self.viewer_email = email.strip().lower() if isinstance(email, str) else None
         accounts = [
             item.get("number")
             for item in (viewer.get("accounts") or [])
