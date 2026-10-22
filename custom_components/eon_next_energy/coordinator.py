@@ -106,6 +106,14 @@ def _statistic_ids(meter: EonMeter) -> tuple[str, str]:
     return f"{prefix}_consumption", f"{prefix}_cost"
 
 
+def _chain(states: dict[datetime, float], total: float) -> list[StatisticData]:
+    rows: list[StatisticData] = []
+    for start in sorted(states):
+        total += states[start]
+        rows.append(StatisticData(start=start, state=states[start], sum=total))
+    return rows
+
+
 class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
     """Fetch delayed E.ON data and insert recorder statistics."""
 
@@ -192,6 +200,25 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
                 return float(records[-1].get("sum") or 0)
         return 0.0
 
+    async def _states_since(
+        self, statistic_id: str, start: datetime
+    ) -> dict[datetime, float]:
+        """Return stored hourly states inside a rewrite window."""
+        result = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            start,
+            None,
+            {statistic_id},
+            "hour",
+            None,
+            {"state"},
+        )
+        return {
+            datetime.fromtimestamp(record["start"], UTC): float(record.get("state") or 0)
+            for record in result.get(statistic_id, [])
+        }
+
     async def _import_meter(
         self, meter: EonMeter, ordinal: int, tariff: Pricing
     ) -> MeterImportResult:
@@ -230,20 +257,15 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             intervals = [replace(item, value=gas_kwh_from_volume(item.value, calorific_value)) for item in intervals]
         hourly = aggregate_complete_hours(intervals, meter.fuel, tariff, "kWh" if estimated else meter.unit)
 
-        consumption_stats: list[StatisticData] = []
-        cost_stats: list[StatisticData] = []
+        # Hours the API skips this run keep their stored state but must be re-summed.
+        consumption_states = await self._states_since(consumption_id, start) if hourly else {}
+        cost_states = {} if volume or not hourly else await self._states_since(cost_id, start)
         for item in hourly:
-            usage = float(item.consumption)
-            consumption_sum += usage
-            consumption_stats.append(
-                StatisticData(start=item.start, state=usage, sum=consumption_sum)
-            )
+            consumption_states[item.start] = float(item.consumption)
             if item.cost_gbp is not None:
-                cost = float(item.cost_gbp)
-                cost_sum += cost
-                cost_stats.append(
-                    StatisticData(start=item.start, state=cost, sum=cost_sum)
-                )
+                cost_states[item.start] = float(item.cost_gbp)
+        consumption_stats = _chain(consumption_states, consumption_sum)
+        cost_stats = _chain(cost_states, cost_sum)
 
         name_prefix = f"E.ON Next {meter.fuel.title()} {ordinal}" + (" Estimated" if estimated else "")
         consumption_metadata = StatisticMetaData(

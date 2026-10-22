@@ -14,7 +14,7 @@ from test_calculations import calculations
 source = ast.parse((Path(__file__).parents[1] / 'custom_components/eon_next_energy/coordinator.py').read_text())
 methods = []
 for node in source.body:
-    if isinstance(node, ast.FunctionDef) and node.name in {'_meter_key', '_statistic_ids'}:
+    if isinstance(node, ast.FunctionDef) and node.name in {'_meter_key', '_statistic_ids', '_chain'}:
         methods.append(node)
     if isinstance(node, ast.ClassDef) and node.name == 'EonNextCoordinator':
         methods.extend(n for n in node.body if isinstance(n, ast.AsyncFunctionDef) and n.name == '_import_meter')
@@ -29,14 +29,15 @@ namespace = dict(Decimal=Decimal, datetime=datetime, time=__import__('datetime')
 exec(compile(ast.fix_missing_locations(module), '<importer>', 'exec'), namespace)
 
 class ImportTests(IsolatedAsyncioTestCase):
-    async def check_import(self, unit, fuel, prior=None, cv=0):
+    async def check_import(self, unit, fuel, prior=None, cv=0, stored=None):
         writes=[]
         namespace['async_add_external_statistics']=lambda hass, metadata, data: writes.append((metadata, data))
         start=datetime(2026, 9, 19, 12, tzinfo=UTC)
         readings=[api.EonInterval(start, start+timedelta(minutes=30), Decimal('0.5')),
             api.EonInterval(start+timedelta(minutes=30), start+timedelta(hours=1), Decimal('0.25'))]
         owner=SimpleNamespace(hass=None, _last_statistic=AsyncMock(return_value=(prior, 10.0 if prior else 0.0)),
-            _sum_before=AsyncMock(return_value=10.0 if prior else 0.0), _setting=lambda k, d:cv if k == 'gas_calorific_value' else d,
+            _sum_before=AsyncMock(return_value=10.0 if prior else 0.0),
+            _states_since=AsyncMock(side_effect=lambda sid, since: dict((stored or {}).get(sid.rsplit('_', 1)[1], {}))), _setting=lambda k, d:cv if k == 'gas_calorific_value' else d,
             client=SimpleNamespace(async_get_consumption=AsyncMock(return_value=readings)))
         tariff=calculations.Tariff(*map(Decimal, ['0.069','0.3367','0.60','0.0812','0.2916']))
         result=await namespace['_import_meter'](owner, api.EonMeter('A','M',fuel,unit),1,tariff)
@@ -74,3 +75,12 @@ class ImportTests(IsolatedAsyncioTestCase):
         self.assertIn('_estimated_consumption',writes[0][0]['statistic_id'])
         self.assertAlmostEqual(writes[0][1][0]['sum'],8.415475)
         self.assertAlmostEqual(writes[1][1][0]['sum'],8.415475*0.0812+0.2916)
+
+    async def test_rewrite_resums_stored_hours_the_api_skipped(self):
+        hour=datetime(2026, 9, 19, 12, tzinfo=UTC)
+        stored={'consumption': {hour-timedelta(hours=1): 1.0, hour: 9.0, hour+timedelta(hours=1): 2.0}}
+        owner,result,writes=await self.check_import('kWh','electricity',stored=stored)
+        rows=writes[0][1]
+        self.assertEqual([r['start'] for r in rows],[hour-timedelta(hours=1),hour,hour+timedelta(hours=1)])
+        self.assertEqual([r['state'] for r in rows],[1.0,0.75,2.0])
+        self.assertEqual([r['sum'] for r in rows],[1.0,1.75,3.75])
