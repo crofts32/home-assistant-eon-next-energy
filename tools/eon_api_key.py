@@ -19,6 +19,7 @@ import argparse
 import base64
 import getpass
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -78,13 +79,61 @@ def normalise_token(value: str) -> str:
     return f"{'JWT' if 'kraken' in _issuer(value).lower() else 'Bearer'} {value}"
 
 
+def read_clipboard() -> str:
+    for command in (["pbpaste"], ["wl-paste", "--no-newline"], ["xclip", "-o", "-selection", "clipboard"]):
+        try:
+            return subprocess.run(command, capture_output=True, check=True, text=True).stdout
+        except (OSError, subprocess.CalledProcessError):
+            continue
+    raise RuntimeError("No clipboard tool found (pbpaste, wl-paste or xclip)")
+
+
+def read_hidden_line(prompt: str) -> str:
+    # Terminals in canonical mode cap a line at 1024 bytes on macOS, shorter than an Auth0 token.
+    try:
+        import termios
+    except ImportError:
+        return getpass.getpass(prompt)
+    fd = sys.stdin.fileno()
+    previous = termios.tcgetattr(fd)
+    updated = termios.tcgetattr(fd)
+    updated[3] &= ~(termios.ICANON | termios.ECHO)
+    sys.stderr.write(prompt)
+    sys.stderr.flush()
+    chars: list[str] = []
+    try:
+        termios.tcsetattr(fd, termios.TCSANOW, updated)
+        while (char := sys.stdin.read(1)) and char not in "\r\n":
+            if char in "\x7f\b":
+                if chars:
+                    chars.pop()
+            elif char == "\x03":
+                raise KeyboardInterrupt
+            else:
+                chars.append(char)
+    finally:
+        termios.tcsetattr(fd, termios.TCSANOW, previous)
+        sys.stderr.write("\n")
+    return "".join(chars)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--regenerate", action="store_true", help="create a key if none exists")
     parser.add_argument("--force", action="store_true", help="with --regenerate, replace an existing key")
+    parser.add_argument("--clipboard", action="store_true", help="read the token from the clipboard instead of prompting")
     args = parser.parse_args()
 
-    raw = getpass.getpass("Authorization header from a signed-in eonnext.com session: ")
+    try:
+        if args.clipboard:
+            raw = read_clipboard()
+        elif not sys.stdin.isatty():
+            raw = sys.stdin.read()
+        else:
+            raw = read_hidden_line("Paste the token from a signed-in eonnext.com session, then press Enter: ")
+    except RuntimeError as err:
+        print(f"Failed: {err}", file=sys.stderr)
+        return 2
     if not raw.strip():
         print("No token supplied.", file=sys.stderr)
         return 2

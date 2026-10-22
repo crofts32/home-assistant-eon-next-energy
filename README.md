@@ -67,8 +67,9 @@ signed-in browser session:
      ```
    - **Network:** reload, pick any request to `api.eonnext-kraken.energy` and
      copy the value of its `Authorization` request header.
-3. Run `python3 tools/eon_api_key.py` and paste the header when prompted. It
-   prints the key. If the account has none yet, rerun with `--regenerate`.
+3. Copy the token, then run `python3 tools/eon_api_key.py --clipboard`. It
+   reads the token from the clipboard and prints the key. Pasting at the
+   prompt also works. If the account has none yet, rerun with `--regenerate`.
    `--regenerate --force` replaces an existing key and breaks any other client
    using the old one.
 
