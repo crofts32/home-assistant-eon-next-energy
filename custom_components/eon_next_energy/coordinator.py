@@ -34,7 +34,14 @@ from .api import (
     EonNextClient,
     EonNextConnectionError,
 )
-from .calculations import LONDON, Tariff, aggregate_complete_hours, gas_kwh_from_volume
+from .calculations import (
+    LONDON,
+    LiveTariff,
+    Pricing,
+    Tariff,
+    aggregate_complete_hours,
+    gas_kwh_from_volume,
+)
 from .const import (
     CONF_ELECTRICITY_OFFPEAK_RATE,
     CONF_ELECTRICITY_PEAK_RATE,
@@ -77,6 +84,9 @@ class EonCoordinatorData:
 
     last_successful_update: datetime
     meters: list[MeterImportResult] = field(default_factory=list)
+    rates_source: str = "configured"
+    electricity_offpeak_rate: float | None = None
+    electricity_peak_rate: float | None = None
 
 
 EonConfigEntry = ConfigEntry["EonNextCoordinator"]
@@ -183,7 +193,7 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
         return 0.0
 
     async def _import_meter(
-        self, meter: EonMeter, ordinal: int, tariff: Tariff
+        self, meter: EonMeter, ordinal: int, tariff: Pricing
     ) -> MeterImportResult:
         calorific_value = Decimal(str(self._setting(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE)))
         estimated = meter.fuel == "gas" and meter.unit in {"m3", "m³"} and calorific_value != 0
@@ -271,6 +281,18 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             cost_statistic_id=None if volume else cost_id,
         )
 
+    async def _published_rates(
+        self, meters: list[EonMeter]
+    ) -> dict[tuple[str, str], tuple]:
+        """Fetch E.ON's rates; configured rates cover anything missing."""
+        published: dict[tuple[str, str], tuple] = {}
+        for account_number in sorted({meter.account_number for meter in meters}):
+            try:
+                published.update(await self.client.async_get_tariffs(account_number))
+            except EonNextApiError:
+                _LOGGER.warning("E.ON tariff rates unavailable; using configured rates")
+        return published
+
     async def _async_update_data(self) -> EonCoordinatorData:
         try:
             await self.client.async_authenticate()
@@ -278,17 +300,37 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             if not meters:
                 raise EonNextApiError("No active meters were returned")
 
-            tariff = self._tariff()
+            fallback = self._tariff()
+            published = await self._published_rates(meters)
             ordinals: dict[str, int] = {"electricity": 0, "gas": 0}
             results: list[MeterImportResult] = []
+            live_electricity: LiveTariff | None = None
             for meter in sorted(
                 meters, key=lambda item: (item.fuel, item.account_number, item.meter_id)
             ):
                 ordinals[meter.fuel] += 1
+                agreements = published.get((meter.fuel, meter.meter_id), ())
+                tariff = LiveTariff(
+                    fallback,
+                    electricity=agreements if meter.fuel == "electricity" else (),
+                    gas=agreements if meter.fuel == "gas" else (),
+                )
+                if meter.fuel == "electricity" and agreements and live_electricity is None:
+                    live_electricity = tariff
                 results.append(
                     await self._import_meter(meter, ordinals[meter.fuel], tariff)
                 )
-            return EonCoordinatorData(datetime.now(UTC), results)
+            data = EonCoordinatorData(datetime.now(UTC), results)
+            if live_electricity is not None:
+                today = datetime.now(LONDON).date()
+                data.rates_source = "eon"
+                data.electricity_offpeak_rate = float(
+                    live_electricity.electricity_rate(datetime.combine(today, time(3), LONDON))
+                )
+                data.electricity_peak_rate = float(
+                    live_electricity.electricity_rate(datetime.combine(today, time(12), LONDON))
+                )
+            return data
         except EonNextAuthenticationError as err:
             raise ConfigEntryAuthFailed("E.ON credentials must be renewed") from err
         except (EonNextConnectionError, EonNextApiError) as err:

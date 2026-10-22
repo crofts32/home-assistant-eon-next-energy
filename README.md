@@ -17,13 +17,24 @@ smart-meter consumption into long-term statistics and the Energy dashboard.
 - Imports half-hour electricity and gas readings, aggregated into Home
   Assistant's hourly external-statistics format.
 - Creates cumulative consumption statistics for each supported active meter, and cost statistics for meters measured in kWh.
-- Applies the configured VAT-inclusive tariff, including daily standing charges.
+- Prices consumption with the VAT-inclusive unit rates and standing charges E.ON
+  publishes for each agreement, falling back to the configured tariff.
 - Polls every six hours and rewrites a rolling 14-day correction window so
   delayed or revised readings are repaired.
 - Exposes only redacted data-freshness sensors. Account numbers, MPANs, MPRNs,
   meter serials and API tokens are not logged or shown as entity attributes.
 
-The default tariff values match E.ON Next Drive Smart V7.3:
+Costs use E.ON's published rates for the agreement covering each half-hour:
+flat, day/night (night = 00:00–07:00 Europe/London) and half-hourly tariffs are
+supported. A half-hourly tariff's published windows are also applied as a
+repeating daily pattern to older readings; slots whose price varied between
+days are not extrapolated. EV-device rates are ignored, because smart-charging
+consumption cannot be told apart from other use. The fuel sensors show
+`rates_source: eon` when live rates were used.
+
+The configured rates are used for any reading E.ON publishes no rate for,
+three- and four-rate tariffs, and whenever the tariff query fails. Their
+defaults match E.ON Next Drive Smart V7.3:
 
 - Electricity 00:00–07:00 Europe/London: £0.069/kWh
 - Electricity 07:00–00:00: £0.3367/kWh

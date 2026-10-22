@@ -16,6 +16,7 @@ from aiohttp import (
     ContentTypeError,
 )
 
+from .calculations import AgreementRates, RateWindow, daily_slot_rates
 from .const import API_URL
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,6 +84,102 @@ query Meters($accountNumber: String!) {
   }
 }
 """
+
+
+TARIFFS_QUERY = """
+query Tariffs($accountNumber: String!) {
+  account(accountNumber: $accountNumber) {
+    electricityAgreements {
+      validFrom
+      validTo
+      isRevoked
+      meterPoint { meters(includeInactive: true) { id } }
+      tariff {
+        __typename
+        ... on StandardTariff { standingCharge unitRate isExport }
+        ... on PrepayTariff { standingCharge unitRate isExport }
+        ... on DayNightTariff { standingCharge dayRate nightRate isExport }
+        ... on HalfHourlyTariff {
+          standingCharge
+          isExport
+          unitRates { validFrom validTo value rateType }
+        }
+      }
+    }
+    gasAgreements {
+      validFrom
+      validTo
+      isRevoked
+      meterPoint { meters(includeInactive: true) { id } }
+      tariff { standingCharge unitRate }
+    }
+  }
+}
+"""
+
+
+def _pounds(value: Any) -> Decimal | None:
+    """Convert E.ON's VAT-inclusive pence to pounds."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        pence = Decimal(str(value))
+    except InvalidOperation:
+        return None
+    if not pence.is_finite() or pence < 0:
+        return None
+    return pence / 100
+
+
+def _optional_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return _parse_datetime(value)
+    except (ValueError, EonNextApiError):
+        return None
+
+
+def _agreement_rates(agreement: dict[str, Any], fuel: str) -> AgreementRates | None:
+    """Parse one agreement; None when it cannot price consumption."""
+    if agreement.get("isRevoked"):
+        return None
+    valid_from = _optional_datetime(agreement.get("validFrom"))
+    tariff = agreement.get("tariff")
+    if valid_from is None or not isinstance(tariff, dict) or tariff.get("isExport"):
+        return None
+    valid_to = _optional_datetime(agreement.get("validTo"))
+    standing = _pounds(tariff.get("standingCharge"))
+    if fuel == "gas" or tariff.get("__typename") in ("StandardTariff", "PrepayTariff"):
+        rates = AgreementRates(valid_from, valid_to, standing, flat_rate=_pounds(tariff.get("unitRate")))
+    elif tariff.get("__typename") == "DayNightTariff":
+        rates = AgreementRates(
+            valid_from,
+            valid_to,
+            standing,
+            day_rate=_pounds(tariff.get("dayRate")),
+            night_rate=_pounds(tariff.get("nightRate")),
+        )
+    elif tariff.get("__typename") == "HalfHourlyTariff":
+        windows: list[RateWindow] = []
+        for item in tariff.get("unitRates") or []:
+            if not isinstance(item, dict) or item.get("rateType") not in (None, "STANDARD"):
+                continue
+            start = _optional_datetime(item.get("validFrom"))
+            rate = _pounds(item.get("value"))
+            if start is not None and rate is not None:
+                windows.append(RateWindow(start, _optional_datetime(item.get("validTo")), rate))
+        ordered = tuple(sorted(windows, key=lambda item: item.start))
+        rates = AgreementRates(
+            valid_from, valid_to, standing, windows=ordered, slot_rates=daily_slot_rates(ordered)
+        )
+    else:
+        _LOGGER.warning(
+            "E.ON tariff type %s is not supported; configured rates are used",
+            tariff.get("__typename") or "unknown",
+        )
+        rates = AgreementRates(valid_from, valid_to, None)
+    return rates
 
 
 def _consumption_query(fuel: str) -> str:
@@ -287,6 +384,36 @@ class EonNextClient:
                                     EonMeter(account_number, meter["id"], fuel, unit)
                                 )
         return meters
+
+    async def async_get_tariffs(
+        self, account_number: str
+    ) -> dict[tuple[str, str], tuple[AgreementRates, ...]]:
+        """Return published rates per (fuel, meter ID), oldest agreement first."""
+        data = await self._request(
+            "Tariffs", TARIFFS_QUERY, {"accountNumber": account_number}
+        )
+        account = data.get("account") or {}
+        if not isinstance(account, dict):
+            raise EonNextApiError("E.ON returned invalid tariff data")
+        result: dict[tuple[str, str], list[AgreementRates]] = {}
+        for fuel, key in (
+            ("electricity", "electricityAgreements"),
+            ("gas", "gasAgreements"),
+        ):
+            for agreement in account.get(key) or []:
+                if not isinstance(agreement, dict):
+                    continue
+                rates = _agreement_rates(agreement, fuel)
+                point = agreement.get("meterPoint") or {}
+                if rates is None or not isinstance(point, dict):
+                    continue
+                for meter in point.get("meters") or []:
+                    if isinstance(meter, dict) and isinstance(meter.get("id"), str):
+                        result.setdefault((fuel, meter["id"]), []).append(rates)
+        return {
+            key: tuple(sorted(items, key=lambda item: item.valid_from))
+            for key, items in result.items()
+        }
 
     async def async_get_consumption(
         self, meter: EonMeter, start: datetime

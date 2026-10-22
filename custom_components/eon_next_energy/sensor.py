@@ -70,17 +70,23 @@ class EonDataFreshnessSensor(CoordinatorEntity[EonNextCoordinator], SensorEntity
         return max(values, default=None)
 
     @property
-    def extra_state_attributes(self) -> dict[str, int | str]:
+    def extra_state_attributes(self) -> dict[str, float | int | str]:
         """Expose counts and statistic IDs, with supplier identifiers omitted."""
-        meters = [item for item in self.coordinator.data.meters if item.fuel == self._fuel]
+        data = self.coordinator.data
+        meters = [item for item in data.meters if item.fuel == self._fuel]
         return {
             "gas_calorific_value": self.coordinator._setting(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE),
-            "electricity_offpeak_rate": self.coordinator._setting(
+            "electricity_offpeak_rate": data.electricity_offpeak_rate
+            if data.electricity_offpeak_rate is not None
+            else self.coordinator._setting(
                 CONF_ELECTRICITY_OFFPEAK_RATE, DEFAULT_ELECTRICITY_OFFPEAK_RATE
             ),
-            "electricity_peak_rate": self.coordinator._setting(
+            "electricity_peak_rate": data.electricity_peak_rate
+            if data.electricity_peak_rate is not None
+            else self.coordinator._setting(
                 CONF_ELECTRICITY_PEAK_RATE, DEFAULT_ELECTRICITY_PEAK_RATE
             ),
+            "rates_source": data.rates_source,
             "meter_count": len(meters),
             "hours_imported_last_update": sum(item.imported_hours for item in meters),
             "consumption_statistics": ", ".join(

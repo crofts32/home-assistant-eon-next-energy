@@ -33,11 +33,11 @@ class PackageMetadataTests(unittest.TestCase):
     def test_graphql_operations_are_strictly_read_only_except_login(self):
         source = (INTEGRATION / "api.py").read_text().lower()
         operations = re.findall(
-            r"^\s*(?:query|mutation)\s+(login|accounts|meters|consumption)\b",
+            r"^\s*(?:query|mutation)\s+(login|accounts|meters|tariffs|consumption)\b",
             source,
             re.MULTILINE,
         )
-        self.assertEqual(set(operations), {"login", "accounts", "meters", "consumption"})
+        self.assertEqual(set(operations), {"login", "accounts", "meters", "tariffs", "consumption"})
         mutations = re.findall(
             r"^\s*mutation\s+(\w+)", source, re.MULTILINE
         )

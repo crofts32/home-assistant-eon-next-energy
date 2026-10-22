@@ -11,7 +11,7 @@
       },
       "tariff": {
         "title": "Tariff and history",
-        "description": "Rates are VAT-inclusive and entered in pounds. Your Next Drive Smart cheap period is 00:00–07:00 Europe/London.",
+        "description": "Rates are VAT-inclusive and entered in pounds. Your Next Drive Smart cheap period is 00:00–07:00 Europe/London. Costs use the unit rates and standing charges E.ON publishes for your agreements; the rates below are used only where E.ON publishes none.",
         "data": {
           "history_days": "Initial history to import (days)",
           "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
@@ -49,7 +49,7 @@
     "step": {
       "init": {
         "title": "Tariff settings",
-        "description": "Gas conversion uses m³ × 1.02264 × calorific value ÷ 3.6. Enter your bill value (37–43), or 0 to keep native volume. Converted gas kWh and costs are estimates. Converted gas recalculates the configured history window on every update; other tariff changes recalculate 14 days. Older records outside these windows remain unchanged.",
+        "description": "Fallback rates, used only where E.ON publishes none for your agreements. Gas conversion uses m³ × 1.02264 × calorific value ÷ 3.6. Enter your bill value (37–43), or 0 to keep native volume. Converted gas kWh and costs are estimates. Converted gas recalculates the configured history window on every update; other tariff changes recalculate 14 days. Older records outside these windows remain unchanged.",
         "data": {
           "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
           "electricity_peak_rate": "Electricity peak rate (£/kWh)",
