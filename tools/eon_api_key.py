@@ -2,10 +2,10 @@
 """Fetch the E.ON Next account API key using a signed-in browser session.
 
 E.ON Next retired email/password login for its Kraken API. Sign in at
-https://www.eonnext.com, open the browser developer tools, select a request to
-api.eonnext-kraken.energy in the Network tab, and copy the value of its
-Authorization request header. Paste it when prompted; it is not echoed,
-saved or sent anywhere except E.ON's API.
+https://www.eonnext.com, then either copy the Authorization request header of
+any request to api.eonnext-kraken.energy from the developer tools Network tab,
+or read the Auth0 ID token from the page (see README). Paste it when prompted;
+it is not echoed, saved or sent anywhere except E.ON's API.
 
 The key is printed once so it can be pasted into Home Assistant. With
 --regenerate the script creates a new key when none exists, or replaces the
@@ -16,6 +16,7 @@ that holds the old key.
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
 import json
 import sys
@@ -58,13 +59,23 @@ def graphql(token: str, operation: str, query: str) -> dict:
     return body.get("data") or {}
 
 
+def _issuer(token: str) -> str:
+    try:
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except (IndexError, ValueError):
+        return ""
+    return str(claims.get("iss", "")) if isinstance(claims, dict) else ""
+
+
 def normalise_token(value: str) -> str:
-    value = value.strip()
+    value = value.strip().strip('"').strip()
     if value.lower().startswith("authorization:"):
         value = value.split(":", 1)[1].strip()
-    if not value.upper().startswith("JWT "):
-        value = f"JWT {value}"
-    return value
+    scheme, _, rest = value.partition(" ")
+    if rest and scheme.lower() in ("jwt", "bearer"):
+        return f"{'JWT' if scheme.lower() == 'jwt' else 'Bearer'} {rest.strip()}"
+    return f"{'JWT' if 'kraken' in _issuer(value).lower() else 'Bearer'} {value}"
 
 
 def main() -> int:

@@ -58,10 +58,16 @@ E.ON Next's website does not show the API key, but it can be read with a
 signed-in browser session:
 
 1. Sign in at <https://www.eonnext.com>.
-2. Open the browser developer tools, select the **Network** tab and reload.
-3. Pick any request to `api.eonnext-kraken.energy` and copy the value of its
-   `Authorization` request header.
-4. Run `python3 tools/eon_api_key.py` and paste the header when prompted. It
+2. Open the browser developer tools and copy a token, either way works:
+   - **Console:** run the snippet below and copy the value it prints.
+     ```js
+     Object.keys(localStorage).filter(k => k.startsWith("@@auth0spajs@@"))
+       .map(k => JSON.parse(localStorage.getItem(k)))
+       .map(v => v?.body?.id_token || v?.id_token).find(Boolean)
+     ```
+   - **Network:** reload, pick any request to `api.eonnext-kraken.energy` and
+     copy the value of its `Authorization` request header.
+3. Run `python3 tools/eon_api_key.py` and paste the header when prompted. It
    prints the key. If the account has none yet, rerun with `--regenerate`.
    `--regenerate --force` replaces an existing key and breaks any other client
    using the old one.
