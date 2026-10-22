@@ -89,12 +89,24 @@ async def graphql(
         json={"operationName": operation, "query": query, "variables": variables},
         headers=headers,
     )
-    response.raise_for_status()
-    body = response.json()
-    if body.get("errors"):
-        message = body["errors"][0].get("message", "GraphQL request failed")
-        raise RuntimeError(message)
-    return body["data"]
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    errors = body.get("errors") if isinstance(body, dict) else None
+    if response.status_code >= 400 or errors or not isinstance(body, dict):
+        codes = sorted(
+            {
+                str((error.get("extensions") or {}).get("errorCode", "unclassified"))
+                for error in errors or []
+                if isinstance(error, dict)
+            }
+        )
+        raise RuntimeError(
+            f"{operation} failed with HTTP {response.status_code}, "
+            f"error codes: {', '.join(codes) or 'none'}"
+        )
+    return body.get("data") or {}
 
 
 async def fetch_intervals(client, token, account, meter_id, fuel, start, end):
@@ -116,7 +128,7 @@ async def fetch_intervals(client, token, account, meter_id, fuel, start, end):
                 if (
                     meter
                     and meter.get("id") == meter_id
-                    and meter.get("consumptionUnits") == "kWh"
+                    and meter.get("consumptionUnits") in ("kWh", "m3", "m³")
                     and meter.get("consumption")
                 ):
                     connections.append(meter["consumption"])
@@ -142,7 +154,7 @@ async def fetch_intervals(client, token, account, meter_id, fuel, start, end):
             return records
 
 
-def report(fuel: str, ordinal: int, records: list[dict], dates: list):
+def report(fuel: str, ordinal: int, records: list[dict], dates: list, unit: str = "kWh"):
     label = f"{fuel.title()} meter {ordinal}"
     if not records:
         print(f"\n{label}: NO HALF-HOURLY DATA RETURNED")
@@ -164,7 +176,7 @@ def report(fuel: str, ordinal: int, records: list[dict], dates: list):
     print(f"\n{label}: {len(records)} intervals returned")
     for day in dates:
         status = "complete" if counts[day] in (46, 48, 50) else "incomplete/missing"
-        total = f", {totals[day]:.3f} kWh" if counts[day] else ""
+        total = f", {totals[day]:.3f} {unit}" if counts[day] else ""
         print(f"  {day.isoformat()}: {counts[day]} intervals ({status}){total}")
     print(f"  Numeric readings: {valid}/{len(records)}")
     return bool(records)
@@ -205,7 +217,7 @@ async def main() -> int:
             if not accounts:
                 raise RuntimeError("No E.ON accounts were returned")
 
-            meters: list[tuple[str, str, str]] = []
+            meters: list[tuple[str, str, str, str]] = []
             for account in accounts:
                 meter_data = await graphql(
                     client, "Meters", METERS, {"accountNumber": account}, token
@@ -218,13 +230,13 @@ async def main() -> int:
                             if meter and meter.get("id"):
                                 if meter.get("consumptionUnits") != "kWh":
                                     raise RuntimeError("Unsupported electricity unit")
-                                meters.append((account, meter["id"], "electricity"))
+                                meters.append((account, meter["id"], "electricity", "kWh"))
                     for point in (prop.get("gasMeterPoints") or []):
                         for meter in (point.get("meters") or []):
                             if meter and meter.get("id"):
-                                if meter.get("consumptionUnits") != "kWh":
+                                if meter.get("consumptionUnits") not in ("kWh", "m3", "m³"):
                                     raise RuntimeError("Unsupported gas unit")
-                                meters.append((account, meter["id"], "gas"))
+                                meters.append((account, meter["id"], "gas", meter["consumptionUnits"]))
 
             if not meters:
                 raise RuntimeError("No active meters were returned")
@@ -232,20 +244,23 @@ async def main() -> int:
             print(f"\nFound {len(meters)} active meter(s); identifiers are redacted.")
             seen = Counter()
             any_data = False
-            for account, meter_id, fuel in meters:
+            for account, meter_id, fuel, unit in meters:
                 seen[fuel] += 1
                 records = await fetch_intervals(
                     client, token, account, meter_id, fuel, start, end
                 )
-                any_data |= report(fuel, seen[fuel], records, dates)
+                any_data |= report(fuel, seen[fuel], records, dates, unit)
 
             print("\nRESULT:", "HALF-HOURLY DATA AVAILABLE" if any_data else "NO DATA FOUND")
             return 0 if any_data else 1
     except httpx.HTTPError as exc:
         print(f"\nProbe failed: network/API error ({type(exc).__name__}).")
         return 2
-    except Exception:
-        print("\nProbe failed: E.ON returned an unexpected response.")
+    except RuntimeError as exc:
+        print(f"\nProbe failed: {exc}.")
+        return 2
+    except Exception as exc:
+        print(f"\nProbe failed: unexpected {type(exc).__name__}.")
         return 2
     finally:
         api_key = ""
