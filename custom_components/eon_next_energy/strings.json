@@ -4,41 +4,42 @@
     "step": {
       "user": {
         "title": "Connect to E.ON Next",
-        "description": "Your password is exchanged for a refresh token and is not stored. This integration is read-only.",
+        "description": "E.ON no longer accepts passwords through the meter API. Import a refresh token from a dedicated private/incognito E.ON sign-in, then close that window before submitting here. Do not reuse a browser session that will continue refreshing. The credential has normal account access; this integration only queries meter data. Home Assistant stores the rotating refresh token, never your password. See the README for instructions.",
         "data": {
           "email": "E.ON Next email",
-          "password": "E.ON Next password"
+          "refresh_token": "Dedicated E.ON browser refresh token"
         }
       },
       "tariff": {
         "title": "Tariff and history",
-        "description": "Rates are VAT-inclusive and entered in pounds. Your Next Drive Smart cheap period is 00:00–07:00 Europe/London.",
+        "description": "Rates are VAT-inclusive and entered in pounds. Your Next Drive Smart cheap period is 00:00\u201307:00 Europe/London.",
         "data": {
           "history_days": "Initial history to import (days)",
-          "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
-          "electricity_peak_rate": "Electricity peak rate (£/kWh)",
-          "electricity_standing_charge": "Electricity standing charge (£/day)",
-          "gas_rate": "Gas rate (£/kWh)",
-          "gas_standing_charge": "Gas standing charge (£/day)",
-          "gas_calorific_value": "Gas calorific value (MJ/m³; 0 keeps volume only)"
+          "electricity_offpeak_rate": "Electricity off-peak rate (\u00a3/kWh)",
+          "electricity_peak_rate": "Electricity peak rate (\u00a3/kWh)",
+          "electricity_standing_charge": "Electricity standing charge (\u00a3/day)",
+          "gas_rate": "Gas rate (\u00a3/kWh)",
+          "gas_standing_charge": "Gas standing charge (\u00a3/day)",
+          "gas_calorific_value": "Gas calorific value (MJ/m\u00b3; 0 keeps volume only)"
         }
       },
       "reauth_confirm": {
         "title": "Reconnect E.ON Next",
-        "description": "Enter the current E.ON Next password. It will be exchanged for a refresh token and discarded.",
+        "description": "E.ON no longer accepts passwords through the meter API. Import a refresh token from a dedicated private/incognito E.ON sign-in, then close that window before submitting here. Do not reuse a browser session that will continue refreshing. The credential has normal account access; this integration only queries meter data. Home Assistant stores the rotating refresh token, never your password. See the README for instructions.",
         "data": {
-          "password": "E.ON Next password"
+          "refresh_token": "Dedicated E.ON browser refresh token"
         }
       }
     },
     "error": {
       "cannot_connect": "Could not connect to E.ON Next",
-      "invalid_auth": "E.ON Next rejected the credentials",
-      "login_response": "E.ON Next rejected the login request with an unrecognized response",
+      "invalid_auth": "E.ON rejected the browser credential. Use a fresh dedicated private/incognito sign-in and close that window before importing.",
+      "login_response": "E.ON browser sign-in returned an unexpected response. Check integration logs without sharing token values.",
       "meter_discovery": "Login succeeded, but E.ON Next rejected the account or meter query",
       "no_meters": "Login succeeded, but E.ON Next returned no active meters",
       "unknown": "E.ON Next returned an unexpected response",
-      "invalid_calorific_value": "Enter 0 for volume-only tracking or a calorific value between 37 and 43."
+      "invalid_calorific_value": "Enter 0 for volume-only tracking or a calorific value between 37 and 43.",
+      "wrong_account": "This browser credential belongs to a different E.ON email address. Use the account already configured here."
     },
     "abort": {
       "already_configured": "E.ON Next Energy Data is already configured",
@@ -49,14 +50,14 @@
     "step": {
       "init": {
         "title": "Tariff settings",
-        "description": "Gas conversion uses m³ × 1.02264 × calorific value ÷ 3.6. Enter your bill value (37–43), or 0 to keep native volume. Converted gas kWh and costs are estimates. Converted gas recalculates the configured history window on every update; other tariff changes recalculate 14 days. Older records outside these windows remain unchanged.",
+        "description": "Gas conversion uses m\u00b3 \u00d7 1.02264 \u00d7 calorific value \u00f7 3.6. Enter your bill value (37\u201343), or 0 to keep native volume. Converted gas kWh and costs are estimates. Converted gas recalculates the configured history window on every update; other tariff changes recalculate 14 days. Older records outside these windows remain unchanged.",
         "data": {
-          "electricity_offpeak_rate": "Electricity off-peak rate (£/kWh)",
-          "electricity_peak_rate": "Electricity peak rate (£/kWh)",
-          "electricity_standing_charge": "Electricity standing charge (£/day)",
-          "gas_rate": "Gas rate (£/kWh)",
-          "gas_standing_charge": "Gas standing charge (£/day)",
-          "gas_calorific_value": "Gas calorific value (MJ/m³; 0 keeps volume only)"
+          "electricity_offpeak_rate": "Electricity off-peak rate (\u00a3/kWh)",
+          "electricity_peak_rate": "Electricity peak rate (\u00a3/kWh)",
+          "electricity_standing_charge": "Electricity standing charge (\u00a3/day)",
+          "gas_rate": "Gas rate (\u00a3/kWh)",
+          "gas_standing_charge": "Gas standing charge (\u00a3/day)",
+          "gas_calorific_value": "Gas calorific value (MJ/m\u00b3; 0 keeps volume only)"
         }
       }
     },

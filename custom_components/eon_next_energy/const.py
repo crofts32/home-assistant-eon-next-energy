@@ -6,6 +6,12 @@ DOMAIN = "eon_next_energy"
 
 CONF_EMAIL = "email"
 CONF_REFRESH_TOKEN = "refresh_token"
+CONF_AUTH_PROVIDER = "auth_provider"
+AUTH_KRAKEN = "kraken"
+AUTH_AUTH0 = "auth0"
+AUTH0_TOKEN_URL = "https://auth.eonnext.com/oauth/token"
+# Public identifier shipped by E.ON's web application; not a client secret.
+AUTH0_CLIENT_ID = "OrFeFacHUoXK2afczePYMLCRMXpwRxzW"
 CONF_HISTORY_DAYS = "history_days"
 CONF_ELECTRICITY_OFFPEAK_RATE = "electricity_offpeak_rate"
 CONF_ELECTRICITY_PEAK_RATE = "electricity_peak_rate"

@@ -36,10 +36,30 @@ The initial import defaults to 30 days. Tariff changes recalculate the latest
 
 ## Security model
 
-The config flow sends the supplied email and password directly to E.ON's Kraken
-GraphQL endpoint. It stores only the returned refresh token and discards the
-password. Subsequent updates use the refresh token. If E.ON invalidates it,
-Home Assistant starts a reauthentication flow.
+E.ON's Kraken API no longer accepts email/password login. New connections and
+reauthentication import a refresh token from E.ON's own Auth0 browser sign-in.
+Home Assistant stores the rotating refresh token, never your password. Existing
+Kraken refresh-token entries remain compatible until they need reauthentication.
+
+**The browser credential has normal account access. It is not a read-only API
+key.** The integration restricts its own requests to meter discovery and usage
+queries. It does not create scoped credentials or change account settings.
+Treat the refresh token as a password; do not put it in issues, logs, screenshots,
+source control, or chat messages. The Auth0 client identifier in the source is a
+public identifier from E.ON's web application, not a client secret.
+
+Use a dedicated private/incognito sign-in and close that window **before**
+importing its refresh token. Do not share a refresh-token chain with a browser
+that will keep refreshing it: token reuse can revoke the chain. Renewal uses
+E.ON's fixed HTTPS Auth0 endpoint and the returned ID token is used for E.ON's
+Kraken queries, matching its web client. The integration saves rotated tokens
+before importing meter data and rejects credentials for a different email.
+If E.ON revokes the connection, Home Assistant requests a fresh browser token.
+
+This remains an unofficial integration. E.ON can change or disable this login
+route. Auth0 recovery has been live-tested for sign-in renewal, meter discovery,
+half-hourly electricity/gas retrieval and a second renewal. That does not
+guarantee that every account or a future E.ON API version will behave identically.
 
 The client contains no account-balance, statement, payment, meter-reading
 submission, tariff switching, EV control or other mutation code. The only
@@ -73,8 +93,27 @@ history window before allowing it to write long-term statistics.
 3. Install **E.ON Next Energy Data** and restart Home Assistant.
 4. Open **Settings → Devices & services → Add integration**, then select
    **E.ON Next Energy Data**.
-5. Enter the current E.ON Next email and password. The password is exchanged
-   for a refresh token and is not stored.
+5. Obtain a **dedicated browser refresh token** as described below, then enter
+   it with your E.ON Next email. Do not enter your password in the token field.
+
+### Dedicated browser sign-in
+
+1. Open a new private/incognito window and sign in at
+   `https://www.eonnext.com/login`. Keep your password on E.ON's site.
+2. In developer tools, open **Application → Local Storage →
+   https://www.eonnext.com** (browser labels may vary).
+3. Find the Auth0 cache entry beginning `@@auth0spajs@@`, with the `eonnext`
+   audience. Copy only its `body.refresh_token` value. Do not use the separate
+   `@@user@@` entry's `id_token`, an OAuth access token, or an entire JSON object.
+4. Close the private/incognito window before using the copied token. Do not
+   log out first or continue using that browser session.
+5. Paste the token directly into Home Assistant's masked field. The connection
+   validates the email, rotates the token and queries the meters before setup
+   completes. Clear the clipboard after successful setup.
+
+For an existing installation, use **Reconnect** on its existing integration
+entry. Do not delete/recreate the integration: reauthentication preserves the
+entry, tariff configuration and existing statistic identifiers.
 
 After the first import, select the external consumption and cost statistics in
 the Energy dashboard. The integration's diagnostic entities list the redacted

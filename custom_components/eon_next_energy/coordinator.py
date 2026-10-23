@@ -36,6 +36,9 @@ from .api import (
 )
 from .calculations import LONDON, Tariff, aggregate_complete_hours, gas_kwh_from_volume
 from .const import (
+    AUTH_KRAKEN,
+    CONF_AUTH_PROVIDER,
+    CONF_EMAIL,
     CONF_ELECTRICITY_OFFPEAK_RATE,
     CONF_ELECTRICITY_PEAK_RATE,
     CONF_ELECTRICITY_STANDING_CHARGE,
@@ -110,7 +113,9 @@ class EonNextCoordinator(DataUpdateCoordinator[EonCoordinatorData]):
             update_interval=UPDATE_INTERVAL,
         )
         self.client = EonNextClient(
-            async_get_clientsession(hass), entry.data[CONF_REFRESH_TOKEN]
+            async_get_clientsession(hass), entry.data[CONF_REFRESH_TOKEN],
+            auth_provider=entry.data.get(CONF_AUTH_PROVIDER, AUTH_KRAKEN),
+            expected_email=entry.data.get(CONF_EMAIL),
         )
 
     def _setting(self, key: str, default: float | int) -> float | int:

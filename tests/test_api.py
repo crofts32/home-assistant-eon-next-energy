@@ -1,6 +1,8 @@
 """Focused tests for E.ON API error handling and meter discovery."""
 
 import importlib.util
+import base64
+import json
 from pathlib import Path
 import sys
 import types
@@ -74,12 +76,83 @@ class FakeResponse:
 class FakeSession:
     def __init__(self, responses):
         self.responses = iter(responses)
+        self.calls = []
 
-    def post(self, *_args, **_kwargs):
+    def post(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
         return next(self.responses)
 
 
+def auth0_id_token(email="user@example.invalid", **overrides):
+    claims = {"iss": "https://auth.eonnext.com/", "aud": api.AUTH0_CLIENT_ID,
+              "email": email, "exp": 9999999999, **overrides}
+    encoded = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+    return f"header.{encoded}.signature"
+
+
 class ApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_auth0_rotation_uses_id_token_for_meter_requests(self):
+        identity = auth0_id_token()
+        session = FakeSession([
+            FakeResponse(200, {"id_token": identity, "access_token": "do-not-use-oauth-access",
+                               "refresh_token": "rotated-browser-token"}),
+            FakeResponse(200, {"data": {"viewer": {"accounts": []}}}),
+        ])
+        client = api.EonNextClient(session, "original-browser-token",
+                                   auth_provider="auth0", expected_email="USER@example.invalid")
+        tokens = await client.async_refresh_access_token()
+        self.assertEqual(tokens.refresh_token, "rotated-browser-token")
+        self.assertEqual(client.refresh_token, "rotated-browser-token")
+        await client.async_get_meters()
+        self.assertEqual(session.calls[0][0], (api.AUTH0_TOKEN_URL,))
+        self.assertEqual(session.calls[0][1]["json"], {
+            "grant_type": "refresh_token", "client_id": api.AUTH0_CLIENT_ID,
+            "refresh_token": "original-browser-token",
+        })
+        self.assertEqual(session.calls[1][1]["headers"]["Authorization"], identity)
+
+    async def test_auth0_without_rotation_keeps_existing_refresh_token(self):
+        client = api.EonNextClient(FakeSession([
+            FakeResponse(200, {"id_token": auth0_id_token()})]),
+            "existing-browser-token", auth_provider="auth0")
+        self.assertEqual((await client.async_refresh_access_token()).refresh_token,
+                         "existing-browser-token")
+
+    async def test_auth0_wrong_user_does_not_replace_saved_credentials(self):
+        client = api.EonNextClient(FakeSession([
+            FakeResponse(200, {"id_token": auth0_id_token("other@example.invalid"),
+                               "refresh_token": "other-users-new-token"})]),
+            "existing-token", auth_provider="auth0", expected_email="user@example.invalid")
+        with self.assertRaises(api.EonNextAccountMismatchError) as raised:
+            await client.async_refresh_access_token()
+        self.assertEqual(client.refresh_token, "existing-token")
+        self.assertNotIn("other@example", str(raised.exception))
+        self.assertNotIn("other-users-new-token", str(raised.exception))
+
+    async def test_auth0_http_failures_are_classified_without_secret_output(self):
+        for status, error in [(400, api.EonNextAuthenticationError),
+                              (401, api.EonNextAuthenticationError),
+                              (403, api.EonNextAuthenticationError),
+                              (429, api.EonNextConnectionError),
+                              (502, api.EonNextConnectionError)]:
+            with self.subTest(status=status):
+                client = api.EonNextClient(FakeSession([
+                    FakeResponse(status, {"error_description": "secret-provider-detail"})]),
+                    "secret-refresh-value", auth_provider="auth0")
+                with self.assertRaises(error) as raised:
+                    await client.async_refresh_access_token()
+                self.assertNotIn("secret", str(raised.exception))
+
+    async def test_auth0_rejects_bad_identity_response(self):
+        for body in [{}, {"access_token": "access-without-id"}, {"id_token": "bad"},
+                     {"id_token": auth0_id_token(iss="https://unexpected.invalid/")},
+                     {"id_token": auth0_id_token(aud="different-client")}]:
+            with self.subTest(body=body):
+                client = api.EonNextClient(FakeSession([FakeResponse(200, body)]),
+                                           "refresh", auth_provider="auth0")
+                with self.assertRaises(api.EonNextApiError):
+                    await client.async_refresh_access_token()
+
     async def test_refresh_502_is_connection_error(self):
         client = api.EonNextClient(FakeSession([FakeResponse(502, {})]), "refresh")
         with self.assertRaises(api.EonNextConnectionError):

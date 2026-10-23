@@ -14,12 +14,15 @@ from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
+    EonNextAccountMismatchError,
     EonNextApiError,
     EonNextAuthenticationError,
     EonNextClient,
     EonNextConnectionError,
 )
 from .const import (
+    AUTH_AUTH0,
+    CONF_AUTH_PROVIDER,
     CONF_ELECTRICITY_OFFPEAK_RATE,
     CONF_ELECTRICITY_PEAK_RATE,
     CONF_ELECTRICITY_STANDING_CHARGE,
@@ -38,8 +41,6 @@ from .const import (
     DEFAULT_HISTORY_DAYS,
     DOMAIN,
 )
-
-CONF_PASSWORD = "password"
 
 
 class EonNextLoginResponseError(EonNextApiError):
@@ -118,11 +119,14 @@ def _valid_calorific_value(settings: dict[str, Any]) -> bool:
     return value == 0 or 37 <= value <= 43
 
 
-async def _authenticate(hass, email: str, password: str) -> str:
+async def _authenticate(hass, email: str, browser_refresh_token: str) -> str:
     """Authenticate and return only a refresh token."""
-    client = EonNextClient(async_get_clientsession(hass))
+    client = EonNextClient(
+        async_get_clientsession(hass), browser_refresh_token.strip(),
+        auth_provider=AUTH_AUTH0, expected_email=email,
+    )
     try:
-        tokens = await client.async_login(email, password)
+        tokens = await client.async_refresh_access_token()
     except EonNextApiError as err:
         raise EonNextLoginResponseError from err
     try:
@@ -145,13 +149,15 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect credentials and exchange them for a refresh token."""
+        """Validate a dedicated browser refresh token before saving it."""
         errors: dict[str, str] = {}
         if user_input is not None:
             email = user_input[CONF_EMAIL].strip().lower()
-            password = user_input[CONF_PASSWORD]
+            browser_refresh_token = user_input[CONF_REFRESH_TOKEN]
             try:
-                refresh_token = await _authenticate(self.hass, email, password)
+                refresh_token = await _authenticate(self.hass, email, browser_refresh_token)
+            except EonNextAccountMismatchError:
+                errors["base"] = "wrong_account"
             except EonNextAuthenticationError:
                 errors["base"] = "invalid_auth"
             except EonNextConnectionError:
@@ -165,12 +171,13 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except EonNextApiError:
                 errors["base"] = "unknown"
             else:
-                password = ""
+                browser_refresh_token = ""
                 await self.async_set_unique_id(sha256(email.encode()).hexdigest())
                 self._abort_if_unique_id_configured()
                 self._credentials = {
                     CONF_EMAIL: email,
                     CONF_REFRESH_TOKEN: refresh_token,
+                    CONF_AUTH_PROVIDER: AUTH_AUTH0,
                 }
                 return await self.async_step_tariff()
 
@@ -183,7 +190,7 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             type=selector.TextSelectorType.EMAIL
                         )
                     ),
-                    vol.Required(CONF_PASSWORD): _password_selector(),
+                    vol.Required(CONF_REFRESH_TOKEN): _password_selector(),
                 }
             ),
             errors=errors,
@@ -216,15 +223,17 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Exchange a new password for a fresh refresh token."""
+        """Import and rotate a dedicated browser refresh token."""
         errors: dict[str, str] = {}
         entry = self._get_reauth_entry()
         if user_input is not None:
-            password = user_input[CONF_PASSWORD]
+            browser_refresh_token = user_input[CONF_REFRESH_TOKEN]
             try:
                 refresh_token = await _authenticate(
-                    self.hass, entry.data[CONF_EMAIL], password
+                    self.hass, entry.data[CONF_EMAIL], browser_refresh_token
                 )
+            except EonNextAccountMismatchError:
+                errors["base"] = "wrong_account"
             except EonNextAuthenticationError:
                 errors["base"] = "invalid_auth"
             except EonNextConnectionError:
@@ -238,15 +247,16 @@ class EonNextEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except EonNextApiError:
                 errors["base"] = "unknown"
             else:
-                password = ""
+                browser_refresh_token = ""
                 return self.async_update_reload_and_abort(
                     entry,
-                    data={**entry.data, CONF_REFRESH_TOKEN: refresh_token},
+                    data={**entry.data, CONF_REFRESH_TOKEN: refresh_token,
+                          CONF_AUTH_PROVIDER: AUTH_AUTH0},
                 )
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema(
-                {vol.Required(CONF_PASSWORD): _password_selector()}
+                {vol.Required(CONF_REFRESH_TOKEN): _password_selector()}
             ),
             errors=errors,
         )

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import logging
+import json
 from typing import Any
 
 from aiohttp import (
@@ -17,7 +19,7 @@ from aiohttp import (
     ContentTypeError,
 )
 
-from .const import API_URL
+from .const import API_URL, AUTH_AUTH0, AUTH_KRAKEN, AUTH0_CLIENT_ID, AUTH0_TOKEN_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +34,10 @@ class EonNextAuthenticationError(EonNextError):
 
 class EonNextConnectionError(EonNextError):
     """The service could not be reached."""
+
+
+class EonNextAccountMismatchError(EonNextAuthenticationError):
+    """The imported browser credential belongs to another account user."""
 
 
 class EonNextApiError(EonNextError):
@@ -165,10 +171,17 @@ def _parse_datetime(value: str) -> datetime:
 class EonNextClient:
     """Read-only E.ON client. It intentionally exposes no mutation except login."""
 
-    def __init__(self, session: ClientSession, refresh_token: str | None = None) -> None:
+    def __init__(
+        self, session: ClientSession, refresh_token: str | None = None, *,
+        auth_provider: str = AUTH_KRAKEN, expected_email: str | None = None,
+    ) -> None:
+        if auth_provider not in (AUTH_KRAKEN, AUTH_AUTH0):
+            raise EonNextApiError("Unknown E.ON authentication provider")
         self._session = session
         self._refresh_token = refresh_token
         self._access_token: str | None = None
+        self._auth_provider = auth_provider
+        self._expected_email = expected_email
 
     @property
     def refresh_token(self) -> str | None:
@@ -188,7 +201,10 @@ class EonNextClient:
         if authenticated:
             if not self._access_token:
                 raise EonNextAuthenticationError("No E.ON access token is available")
-            headers["Authorization"] = f"JWT {self._access_token}"
+            headers["Authorization"] = (
+                self._access_token if self._auth_provider == AUTH_AUTH0
+                else f"JWT {self._access_token}"
+            )
 
         try:
             async with self._session.post(
@@ -242,7 +258,65 @@ class EonNextClient:
         """Use the stored refresh token to obtain a new access token."""
         if not self._refresh_token:
             raise EonNextAuthenticationError("No E.ON refresh token is available")
+        if self._auth_provider == AUTH_AUTH0:
+            return await self._async_refresh_auth0()
         return await self._async_obtain_token({"refreshToken": self._refresh_token})
+
+    async def _async_refresh_auth0(self) -> EonTokens:
+        """Renew a dedicated browser login without storing a password.
+
+        E.ON's web client uses the returned ID token, not the OAuth access token,
+        for Kraken queries. Never log response bodies or credential values.
+        """
+        try:
+            async with self._session.post(
+                AUTH0_TOKEN_URL,
+                json={
+                    "grant_type": "refresh_token", "client_id": AUTH0_CLIENT_ID,
+                    "refresh_token": self._refresh_token,
+                },
+                timeout=ClientTimeout(total=30),
+            ) as response:
+                if response.status == 429 or response.status >= 500:
+                    raise EonNextConnectionError("E.ON sign-in is temporarily unavailable")
+                if response.status in (400, 401, 403):
+                    raise EonNextAuthenticationError("E.ON browser sign-in must be renewed")
+                response.raise_for_status()
+                body = await response.json()
+        except ContentTypeError as err:
+            raise EonNextApiError("E.ON sign-in returned an invalid response") from err
+        except ClientResponseError as err:
+            raise EonNextApiError("E.ON sign-in returned an unexpected HTTP status") from err
+        except (ClientError, TimeoutError) as err:
+            raise EonNextConnectionError("Could not connect to E.ON sign-in") from err
+        except (TypeError, ValueError) as err:
+            raise EonNextApiError("E.ON sign-in returned an invalid response") from err
+        if not isinstance(body, dict) or not isinstance(body.get("id_token"), str):
+            raise EonNextApiError("E.ON sign-in did not return an ID token")
+        id_token = body["id_token"]
+        try:
+            segment = id_token.split(".")[1]
+            claims = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+            audiences = claims.get("aud", [])
+            audiences = [audiences] if isinstance(audiences, str) else audiences
+            if claims.get("iss") != "https://auth.eonnext.com/" or AUTH0_CLIENT_ID not in audiences:
+                raise ValueError("Unexpected issuer or audience")
+        except (IndexError, TypeError, ValueError, AttributeError) as err:
+            raise EonNextApiError("E.ON sign-in returned malformed ID-token claims") from err
+        # The credential is returned directly by the fixed HTTPS Auth0 endpoint.
+        # These claims bind the account identity; Kraken verifies the token on use.
+        if self._expected_email and (
+            str(claims.get("email", "")).strip().casefold()
+            != self._expected_email.strip().casefold()
+        ):
+            raise EonNextAccountMismatchError("E.ON browser sign-in belongs to another user")
+        refresh = body.get("refresh_token", self._refresh_token)
+        if not isinstance(refresh, str) or not refresh:
+            raise EonNextApiError("E.ON sign-in did not return a valid refresh token")
+        tokens = EonTokens(id_token, refresh, claims.get("exp"), None)
+        self._access_token = tokens.access_token
+        self._refresh_token = tokens.refresh_token
+        return tokens
 
     async def _async_obtain_token(self, token_input: dict[str, str]) -> EonTokens:
         data = await self._request(
